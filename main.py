@@ -357,7 +357,6 @@ async def safe_goto(
             except Exception as e:
                 last_exc = e
                 logger.debug(f"[Attempt {attempt}] goto failed: {e}")
-                await asyncio.sleep(2)
 
     logger.error(f"Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
     raise last_exc
@@ -390,7 +389,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
         logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – password field not found")
         try:
             body_text = await page.locator('body').inner_text()
-            logger.debug(f"[Browser {idx}] Current page body: {body_text}")
+            logger.debug(f"[Browser {idx}] Current page body after entering username: {body_text}")
         except TargetClosedError:
             # This exception means the page (or context or browser) was closed
             logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
@@ -405,7 +404,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     if logger.isEnabledFor(logging.DEBUG):
         try:
             body_text = await page.locator('body').inner_text()
-            logger.debug(f"[Browser {idx}] Current page body: {body_text}")
+            logger.debug(f"[Browser {idx}] Current page body after entering password: {body_text}")
         except TargetClosedError:
             # This exception means the page (or context or browser) was closed
             logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
@@ -544,7 +543,6 @@ async def get_job_urls(
 
             try:
                 # give Upwork a moment after login
-                await asyncio.sleep(1)
                 page = await safe_goto(page, url, context)
 
 
@@ -552,7 +550,7 @@ async def get_job_urls(
                 if logger.isEnabledFor(logging.DEBUG):
                     try:
                         body_text = await page.locator('body').inner_text()
-                        logger.debug(f"[Browser 0] Current page body: {body_text[:300]}") 
+                        logger.debug(f"[Browser 0] Current page body after going to search page: {body_text[:300]}") 
                     except TargetClosedError:
                         logger.warning("[Browser 0]Page or browser crashed. Creating new page...")
                         try:
@@ -567,16 +565,11 @@ async def get_job_urls(
                     logger.debug("[Browser 0] Job list selector appeared.")
                 except PlaywrightTimeoutError:
                     logger.debug("[Browser 0] Job list never appeared — falling back to fixed delay.")
-                    await asyncio.sleep(3)
+
                 
-                # if debug mode, screenshot the page and print the body text
-                if logger.isEnabledFor(logging.DEBUG):
-                    # screenshot the page for local testing
-                    screenshot_path = os.path.join(Logger.get_log_dir('DEBUG'), f'job_urls_page_{page_num}.png')
-                    await page.screenshot(path=screenshot_path)
-                    # attempt to get the body text and print for debugging
-                    body_text = await page.locator('body').inner_text()
-                    logger.debug(f"[Browser 0] Current page body: {body_text[:100]}")
+                body_text = await page.locator('body').inner_text()
+                logger.info(f"[Browser 0] Current page body after waiting for job list selector: {body_text[:50]}") 
+                
 
                 # Wait for at least one <article> to be present, but handle empty pages
                 try:
