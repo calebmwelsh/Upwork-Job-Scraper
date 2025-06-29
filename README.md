@@ -2,6 +2,10 @@
 
 A Python-based tool for scraping job listings from Upwork using Playwright and Camoufox for browser automation and anti-bot evasion. The project supports direct scraping, outputs results as CSV files, and can be run as an Apify Actor.
 
+## Docker Hub
+
+You can also pull and run this scraper from Docker Hub: [kdidtech/upwork-job-scraper](https://hub.docker.com/repository/docker/kdidtech/upwork-job-scraper/general)
+
 ## Run on Apify
 
 This scraper is also available as an [Apify Actor](https://console.apify.com/actors/pmny1mh4qyCwAaG3l/), which allows you to run it on the Apify platform for scheduled and parallel scraping without managing your own infrastructure.
