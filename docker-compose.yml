@@ -1,0 +1,5 @@
+services:
+  upwork-job-scraper:
+    build: ./Upwork-Job-Scraper
+    environment:
+      - 'jsonInput={"credentials": {"username": "user@example.com", "password": "your_password_here"}, "search": {"query": "Workflow Automation", "search_any": "make.com n8n tines Zapier", "search_exact": "", "search_none": "", "search_title": "", "category": [], "contract_to_hire": false, "duration": ["week", "month", "semester", "ongoing"], "fixed": true, "hires_min": 1, "hires_max": 10, "hourly": true, "hourly_max": 70, "hourly_min": 10, "limit": 70, "payment_verified": true, "previous_clients": false, "fixed_price_catagory_num": ["3"], "fixed_max": 100, "fixed_min": 30, "proposal_num": "", "sort": "relevance", "expertise_level_number": ["1", "2", "3"], "workload": ["part_time", "full_time"]}}'

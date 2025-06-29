@@ -1,0 +1,38 @@
+[General]
+save_csv = { optional = true, default = true, explanation = "Save the results to a CSV file.", example = true }
+
+[Credentials]
+username = { optional = true, default = "", explanation = "Your Upwork username or email.", example = "user@example.com" }
+password = { optional = true, default = "", explanation = "Your Upwork password.", example = "hunter2" }
+
+[Search]
+query = { optional = true, default = "Workflow Automation", explanation = "Main search query.", example = "Workflow Automation" }
+search_any = { optional = true, default = "make.com n8n tines Zapier", explanation = "Any of these words in search.", example = "make.com n8n tines Zapier" }
+search_exact = { optional = true, default = "python", explanation = "Exact phrase to search for.", example = "python" }
+search_none = { optional = true, default = "survey", explanation = "Exclude these words from search.", example = "survey" }
+search_title = { optional = true, default = "python", explanation = "Words that should appear in the job title.", example = "python" }
+
+category = { optional = true, default = ["accounting-consulting"], explanation = "Job categories to search in.", example = ["accounting-consulting"] }
+contract_to_hire = { optional = true, default = true, explanation = "Include contract to hire positions.", example = true }
+projectDuration = { optional = true, default = ["week", "month", "semester", "ongoing"], explanation = "Project duration options.", example = ["week", "month", "semester", "ongoing"] }
+fixed = { optional = true, default = true, explanation = "Include fixed-price jobs.", example = true }
+hourly = { optional = true, default = true, explanation = "Include hourly jobs.", example = true }
+hourly_min = { optional = true, default = 10, explanation = "Minimum hourly rate.", example = 10 }
+hourly_max = { optional = true, default = 50, explanation = "Maximum hourly rate.", example = 50 }
+fixed_min = { optional = true, default = 30, explanation = "Minimum fixed price.", example = 30 }
+fixed_max = { optional = true, default = 100, explanation = "Maximum fixed price.", example = 100 }
+hires_min = { optional = true, default = 1, explanation = "Minimum number of hires.", example = 1 }
+hires_max = { optional = true, default = 10, explanation = "Maximum number of hires.", example = 10 }
+limit = { optional = true, default = 50, explanation = "Maximum number of results to return.", example = 50 }
+payment_verified = { optional = true, default = true, explanation = "Only show jobs from payment verified clients.", example = true }
+previous_clients = { optional = true, default = false, explanation = "Include previous clients.", example = false }
+sort = { optional = true, default = "newest", explanation = "Sort order for results.", example = "newest" }
+expertise_level_number = { optional = true, default = ["1"], explanation = "Experience level (1=Entry, 2=Intermediate, 3=Expert).", example = ["1"] }
+workload = { optional = true, default = ["part_time", "full_time"], explanation = "Type of workload.", example = ["part_time", "full_time"] }
+fixed_price_catagory_num = { optional = true, default = ["1"], explanation = "Fixed price category numbers.", example = ["1"] }
+
+
+
+
+
+

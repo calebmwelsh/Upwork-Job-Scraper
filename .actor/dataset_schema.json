@@ -1,0 +1,28 @@
+{
+  "actorSpecification": 1,
+  "fields": {},
+  "views": {
+    "overview": {
+      "title": "Overview",
+      "transformation": {
+        "fields": [
+          "job_id", "title", "ts_publish", "description", "type", "fixed_budget_amount", "hourly_min", "hourly_max", "url"
+        ]
+      },
+      "display": {
+        "component": "table",
+        "properties": {
+          "job_id": { "label": "ID", "format": "text" },
+          "title": { "label": "Title", "format": "text" },
+          "ts_publish": { "label": "Ts_publish", "format": "date" },
+          "description": { "label": "Description", "format": "text" },
+          "type": { "label": "Type", "format": "text" },
+          "fixed_budget_amount": { "label": "Fixed", "format": "number" },
+          "hourly_min": { "label": "Hourly Min", "format": "number" },
+          "hourly_max": { "label": "Hourly Max", "format": "number" },
+          "url": { "label": "URL", "format": "link" }
+        }
+      }
+    }
+  }
+} 

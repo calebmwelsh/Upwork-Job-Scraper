@@ -1,0 +1,16 @@
+__pycache__/
+*tempCodeRunnerFile.py
+.DS_Store
+
+# Config files
+config.toml
+
+# Testing files
+testing/
+test*
+# Data output and logs (avoid committing large files)
+data/
+Notes.txt
+
+.gitattributes
+.dockerignore

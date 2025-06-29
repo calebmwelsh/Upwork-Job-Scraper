@@ -1,0 +1,8 @@
+apify==2.6.0
+beautifulsoup4==4.13.4
+camoufox==0.4.11
+coloredlogs==15.0.1
+Js2Py==0.74
+pandas==2.3.0
+playwright==1.52.0
+toml==0.10.2

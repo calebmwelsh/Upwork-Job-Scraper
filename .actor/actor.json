@@ -1,0 +1,13 @@
+{
+    "actorSpecification": 1,
+    "name": "upwork-job-scraper",
+    "version": "0.1.0",
+    "buildTag": "latest",
+    "maxMemoryMbytes": 16384,
+    "dockerfile": "../Dockerfile",
+    "readme": "./ACTOR.md",
+    "input": "./INPUT_SCHEMA.json",
+    "storages": {
+        "dataset": "./dataset_schema.json"
+    }
+} 
