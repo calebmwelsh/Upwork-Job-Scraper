@@ -1315,42 +1315,58 @@ async def main(jsonInput: dict) -> list[dict]:
         browsers = []
         contexts = []
         pages = []
-        for _ in range(NUM_DETAIL_WORKERS):
-            browser = await stack.enter_async_context(
-                AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True)
-            )
-            browsers.append(browser)
-            context = await browser.new_context()
-            contexts.append(context)
-            page = await context.new_page()
-            pages.append(page)
+        flattened_results = []
+        # try to create browsers
+        try:
+            for _ in range(NUM_DETAIL_WORKERS):
+                browser = await stack.enter_async_context(
+                    AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True)
+                )
+                browsers.append(browser)
+                context = await browser.new_context()
+                contexts.append(context)
+                page = await context.new_page()
+                pages.append(page)
+        except Exception as e:
+            logger.error(f"Error creating browsers: {e}")
+
         # Login/captcha for all browsers
-        logger.info("Sending Out Monkeys to Solve Captcha and Login...")
-        await asyncio.gather(*[
-            login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
-            for idx in range(NUM_DETAIL_WORKERS)
-        ])
+        try:
+            logger.info("Sending Out Monkeys to Solve Captcha...")
+            await asyncio.gather(*[
+                login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
+                for idx in range(NUM_DETAIL_WORKERS)
+            ])
+        except Exception as e:
+            logger.error(f"Error logging in: {e}")
 
         # Get jobs for this single query using the first browser
-        logger.info("Getting Related Jobs...")
-        job_urls_dict = await get_job_urls(pages[0], contexts[0], search_queries, search_urls, limit=limit)
-        job_urls = list(job_urls_dict.values())[0]
-        logger.debug(f"Got {len(job_urls)} job URLs.")
+        try:
+            logger.info("Getting Related Jobs...")
+            job_urls_dict = await get_job_urls(pages[0], contexts[0], search_queries, search_urls, limit=limit)
+            job_urls = list(job_urls_dict.values())[0]
+            logger.debug(f"Got {len(job_urls)} job URLs.")
+        except Exception as e:
+            logger.error(f"Error getting jobs: {e}")
 
+        
         # Distribute job URLs to the detail workers
         job_chunks = chunkify(job_urls, NUM_DETAIL_WORKERS) if NUM_DETAIL_WORKERS > 0 else []
         logger.debug(f"job_chunks: {job_chunks}")
 
         # Each detail worker processes its chunk using its own browser
-        tasks = [
-            browser_worker(idx, pages[idx], contexts[idx], job_chunks[idx], credentials_provided)
-            for idx in range(NUM_DETAIL_WORKERS)
-        ] if NUM_DETAIL_WORKERS > 0 else []
+        try:
+            tasks = [
+                browser_worker(idx, pages[idx], contexts[idx], job_chunks[idx], credentials_provided)
+                for idx in range(NUM_DETAIL_WORKERS)
+            ] if NUM_DETAIL_WORKERS > 0 else []
 
-        logger.info("Getting Job Attributes...")
-        batch_results = await asyncio.gather(*tasks) if tasks else []
-        # Flatten the batch results
-        flattened_results = [item for sublist in batch_results for item in sublist]
+            logger.info("Getting Job Attributes...")
+            batch_results = await asyncio.gather(*tasks) if tasks else []
+            # Flatten the batch results
+            flattened_results = [item for sublist in batch_results for item in sublist]
+        except Exception as e:
+            logger.error(f"Error getting job attributes: {e}")
 
         # Trim to the original limit
         logger.debug(f"limit: {limit-5}")
