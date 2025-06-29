@@ -1360,7 +1360,7 @@ async def main(jsonInput: dict) -> list[dict]:
         flattened_results = [item for sublist in batch_results for item in sublist]
 
         # Trim to the original limit
-        logger.debug(f"limit: {limit}")
+        logger.debug(f"limit: {limit-5}")
         flattened_results = flattened_results[:limit-5]
 
         # Push to Apify dataset if running on Apify
