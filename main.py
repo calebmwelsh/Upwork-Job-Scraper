@@ -378,24 +378,42 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     :rtype: bool
     """
     # Wait for username field and enter username
-    await page.wait_for_selector('#login_username', timeout=20000)
+    try:
+        await page.wait_for_selector('#login_username', timeout=10000)
+    except PlaywrightTimeoutError:
+        logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – username field not found, reloading page")
+        try:
+            await page.reload()
+            await page.wait_for_selector('#login_username', timeout=10000)
+        except PlaywrightTimeoutError:
+            try:
+                body_text = await page.locator('body').inner_text()
+                logger.debug(f"[Browser {idx}] Current page body after waiting for username field: {body_text}")
+            except TargetClosedError:
+                # This exception means the page (or context or browser) was closed
+                logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
+            return False
+        
     await page.fill('#login_username', username)
     logger.debug(f"[Browser {idx}] Username entered: {username}")
     await page.press('#login_username', 'Enter')
 
     # Wait for password field and enter password
     try:
-        await page.wait_for_selector('#login_password', timeout=20000)
+        await page.wait_for_selector('#login_password', timeout=10000)
     except PlaywrightTimeoutError:
-        logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – password field not found")
+        logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – password field not found, reloading page")
         try:
-            body_text = await page.locator('body').inner_text()
-            logger.debug(f"[Browser {idx}] Current page body after entering username: {body_text}")
-        except TargetClosedError:
-            # This exception means the page (or context or browser) was closed
-            logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
-        return False
-        # raise
+            await page.reload()
+            await page.wait_for_selector('#login_password', timeout=10000)
+        except PlaywrightTimeoutError:
+            try:
+                body_text = await page.locator('body').inner_text()
+                logger.debug(f"[Browser {idx}] Current page body after waiting for password field: {body_text}")
+            except TargetClosedError:
+                # This exception means the page (or context or browser) was closed
+                logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
+            return False
 
     await page.fill('#login_password', password)
     logger.debug(f"[Browser {idx}] Password entered.")
