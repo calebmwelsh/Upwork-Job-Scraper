@@ -312,6 +312,7 @@ def build_upwork_search_url(params: dict) -> str:
     return f"{base_url}?" + urlencode(url_params)
 
 async def safe_goto(
+    browser_idx: int,
     page: Page,
     url: str,
     browser_context: BrowserContext,
@@ -342,9 +343,9 @@ async def safe_goto(
     for attempt in range(1, max_retries + 1):
         for wait_until in wait_untils:
             try:
-                logger.debug(f"[Attempt {attempt}] goto({url}) waitUntil={wait_until}")
+                logger.debug(f"[Browser {browser_idx}] [Attempt {attempt}] goto({url}) waitUntil={wait_until}")
                 response = await page.goto(url, timeout=timeout, wait_until=wait_until)
-                logger.debug(f"[Attempt {attempt}] Navigation succeeded (waitUntil={wait_until})")
+                logger.debug(f"[Browser {browser_idx}] [Attempt {attempt}] Navigation succeeded (waitUntil={wait_until})")
                 # return working page
                 return page  
             except TargetClosedError:
@@ -356,9 +357,9 @@ async def safe_goto(
                     raise create_exc
             except Exception as e:
                 last_exc = e
-                logger.debug(f"[Attempt {attempt}] goto failed: {e}")
+                logger.debug(f"[Browser {browser_idx}] [Attempt {attempt}] goto failed: {e}")
 
-    logger.error(f"Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
+    logger.error(f"[Browser {browser_idx}] Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
     raise last_exc
 
 async def login_process(page: Page, idx: int, username: str, password: str) -> bool:
@@ -443,7 +444,7 @@ async def login_and_solve(
     :return: None
     """
     # go to search url
-    await safe_goto(page, search_url, context)
+    await safe_goto(idx, page, search_url, context)
     # bypass captcha
     logger.debug(f"[Browser {idx}] Checking for captcha challenge...")
     captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts = 9, solve_click_delay = 6, wait_checkbox_attempts = 5, wait_checkbox_delay = 10, checkbox_click_attempts = 3, attempt_delay = 10)
@@ -455,7 +456,7 @@ async def login_and_solve(
     if credentials_provided:
         # login steps 
         logger.debug(f"[Browser {idx}] Logging in...")
-        page = await safe_goto(page, login_url, context, timeout=60000)
+        page = await safe_goto(idx, page, login_url, context, timeout=60000)
         await login_process(page, idx, username, password)
 
 async def browser_worker(
@@ -488,7 +489,7 @@ async def browser_worker(
         try:
             logger.debug(f"[Browser {idx}] Processing URL: {url}")
             # attempt to navigate to job url
-            page = await safe_goto(page, url, context, timeout=40000)
+            page = await safe_goto(idx, page, url, context, timeout=40000)
             await page.wait_for_selector("#main", timeout=20000)
             # get html
             html = await page.content()
@@ -543,7 +544,7 @@ async def get_job_urls(
 
             try:
                 # give Upwork a moment after login
-                page = await safe_goto(page, url, context)
+                page = await safe_goto(0, page, url, context)
 
 
                 # attempt to get the body text and print for debugging
