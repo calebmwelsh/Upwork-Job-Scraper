@@ -40,7 +40,7 @@
         },
         "username": {
             "sectionCaption": "🔑 Authentication",
-            "sectionDescription": "Enter your Upwork username and password.",
+            "sectionDescription": "WARNING⚠️: If too many requests are made, your account will be suspended. Using your account for this actor will provide more accurate results and more fields will be filled. Enter your Upwork username and password.",
             "title": "🧍 Username",
             "type": "string",
             "example": "user@example.com",
