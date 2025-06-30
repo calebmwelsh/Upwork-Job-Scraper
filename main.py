@@ -1348,16 +1348,18 @@ async def main(jsonInput: dict) -> list[dict]:
                 pages.append(page)
         except Exception as e:
             logger.error(f"Error creating browsers: {e}")
+            sys.exit(1)
 
         # Login/captcha for all browsers
-        try:
-            logger.info("Sending Out Monkeys to Solve Captcha...")
-            await asyncio.gather(*[
-                login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
-                for idx in range(NUM_DETAIL_WORKERS)
-            ])
-        except Exception as e:
-            logger.error(f"Error logging in: {e}")
+        # try:
+        logger.info("Sending Out Monkeys to Solve Captcha...")
+        await asyncio.gather(*[
+            login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
+            for idx in range(NUM_DETAIL_WORKERS)
+        ])
+        # except Exception as e:
+        #     logger.error(f"Error logging in: {e}")
+        #     sys.exit(1)
 
         # Get jobs for this single query using the first browser
         try:
@@ -1367,6 +1369,7 @@ async def main(jsonInput: dict) -> list[dict]:
             logger.debug(f"Got {len(job_urls)} job URLs.")
         except Exception as e:
             logger.error(f"Error getting jobs: {e}")
+            sys.exit(1)
 
         
         # Distribute job URLs to the detail workers
@@ -1386,6 +1389,7 @@ async def main(jsonInput: dict) -> list[dict]:
             flattened_results = [item for sublist in batch_results for item in sublist]
         except Exception as e:
             logger.error(f"Error getting job attributes: {e}")
+            sys.exit(1)
 
         # Trim to the original limit
         logger.debug(f"limit: {limit-5}")
