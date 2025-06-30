@@ -568,7 +568,7 @@ async def get_job_urls(
 
                 
                 body_text = await page.locator('body').inner_text()
-                logger.info(f"[Browser 0] Current page body after waiting for job list selector: {body_text[:50]}") 
+                logger.debug(f"[Browser 0] Current page body after waiting for job list selector: {body_text[:50]}") 
                 
 
                 # Wait for at least one <article> to be present, but handle empty pages
