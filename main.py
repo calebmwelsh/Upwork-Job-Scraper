@@ -1404,7 +1404,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # set logger
-    logger_obj = Logger(level="INFO")
+    logger_obj = Logger(level="DEBUG")
     logger = logger_obj.get_logger()
 
     # Load credentials/input data from environment variable or argument
