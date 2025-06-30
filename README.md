@@ -1,3 +1,7 @@
+# ⚠️ Disclaimer
+
+**Warning:** This tool is intended for educational and research purposes only. Scraping Upwork or automating interactions with their platform may violate Upwork's [Terms of Service](https://www.upwork.com/legal#terms-of-use) (TOS). Use of this tool could result in your Upwork account being suspended, banned, or otherwise penalized, especially if used excessively or in a way that disrupts Upwork's services. The authors and contributors of this project are not responsible for any misuse or consequences resulting from the use of this software. Use at your own risk.
+
 # Upwork Job Scraper
 
 A Python-based tool for scraping job listings from Upwork using Playwright and Camoufox for browser automation and anti-bot evasion. The project supports direct scraping, outputs results as CSV files, and can be run as an Apify Actor.
