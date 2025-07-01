@@ -1359,15 +1359,15 @@ async def main(jsonInput: dict) -> list[dict]:
             sys.exit(1)
 
         # Login/captcha for all browsers
-        # try:
-        logger.info("Sending Out Monkeys to Solve Captcha...")
-        await asyncio.gather(*[
-            login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
-            for idx in range(NUM_DETAIL_WORKERS)
-        ])
-        # except Exception as e:
-        #     logger.error(f"Error logging in: {e}")
-        #     sys.exit(1)
+        try:
+            logger.info("Sending Out Monkeys to Solve Captcha...")
+            await asyncio.gather(*[
+                login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
+                for idx in range(NUM_DETAIL_WORKERS)
+            ])
+        except Exception as e:
+            logger.error(f"Error logging in: {e}")
+            sys.exit(1)
 
         # Get jobs for this single query using the first browser
         try:
