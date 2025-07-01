@@ -426,6 +426,33 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
 
     await asyncio.sleep(3)
 
+    # check if verification failed
+    if 'Verification failed. Please try again.' in await page.locator('body').inner_text()[:100]:
+        logger.debug(f"[Browser {idx}] Verification failed, retrying.")
+        # Wait for password field and enter password
+        try:
+            await page.wait_for_selector('#login_password', timeout=10000)
+        except PlaywrightTimeoutError:
+            logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – password field not found, reloading page")
+            try:
+                logger.debug(f"[Browser {idx}] Reloading page")
+                await page.reload()
+                await page.wait_for_selector('#login_password', timeout=10000)
+            except PlaywrightTimeoutError:
+                try:
+                    body_text = await page.locator('body').inner_text()
+                    logger.debug(f"[Browser {idx}] Current page body after waiting for password field: {body_text[:100]}")
+                except TargetClosedError:
+                    # This exception means the page (or context or browser) was closed
+                    logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
+                return False
+
+        await page.fill('#login_password', password)
+        logger.debug(f"[Browser {idx}] Password entered.")
+        await page.press('#login_password', 'Enter')
+        
+    await asyncio.sleep(3)
+
     logger.debug(f"[Browser {idx}] Login process complete.")
     if logger.isEnabledFor(logging.DEBUG):
         try:
@@ -483,179 +510,6 @@ async def login_and_solve(
         logger.debug(f"[Browser {idx}] Logging in...")
         page = await safe_goto(idx, page, login_url, context, timeout=60000)
         await login_process(page, idx, username, password)
-
-async def browser_worker(
-    idx: int,
-    page: Page,
-    context: BrowserContext,
-    job_urls: list[str],
-    credentials_provided: bool
-) -> list[dict]:
-    """
-    Process a list of Upwork job URLs, extract job attributes for each, and return results.
-
-    :param idx: Index of the browser/page (for logging)
-    :type idx: int
-    :param page: Playwright Page object
-    :type page: Page
-    :param context: Playwright BrowserContext
-    :type context: BrowserContext
-    :param job_urls: List of Upwork job URLs to process
-    :type job_urls: list[str]
-    :param credentials_provided: Whether credentials are provided
-    :type credentials_provided: bool
-    :return: List of job attribute dictionaries
-    :rtype: list[dict]
-    """
-    # job attributes
-    job_attributes = []
-    # iterate over a portion of job urls
-    for url in job_urls:
-        try:
-            logger.debug(f"[Browser {idx}] Processing URL: {url}")
-            # attempt to navigate to job url
-            page = await safe_goto(idx, page, url, context, timeout=40000)
-            await page.wait_for_selector("#main", timeout=20000)
-            # get html
-            html = await page.content()
-            # extract job details
-            job_id_match = re.search(r'~([0-9a-zA-Z]+)', url)
-            job_id = job_id_match.group(1) if job_id_match else f"{idx}"
-            job_data = extract_job_attributes_from_html(html, job_id, credentials_provided)
-            # flatten the job data
-            flat = {"job_id": job_id, "url": url}
-            flat.update(job_data[job_id])
-            job_attributes.append(flat)
-        except Exception:
-            logger.exception(f"[Browser {idx}] Failed to process {url}")
-            continue
-    return job_attributes
-
-async def get_job_urls(
-    page: Page,
-    context: BrowserContext,
-    search_querys: list[str],
-    search_urls: list[str],
-    limit: int = 50
-) -> dict[str, list[str]]:
-    """
-    For each search query and URL, navigate to the page, solve Cloudflare if needed, and extract job URLs.
-
-    :param page: Playwright Page object
-    :type page: Page
-    :param context: Playwright BrowserContext
-    :type context: BrowserContext
-    :param search_querys: List of search query strings
-    :type search_querys: list[str]
-    :param search_urls: List of Upwork search URLs
-    :type search_urls: list[str]
-    :param limit: Maximum number of job URLs to fetch per query
-    :type limit: int
-    :return: Dictionary mapping each query to a list of job URLs
-    :rtype: dict[str, list[str]]
-    """
-    search_results = {}
-    for query, base_url in zip(search_querys, search_urls):
-        all_hrefs = []
-        # Round up division
-        pages_needed = (limit + 49) // 50 
-        # If limit is multiple of 50, take full last page
-        jobs_from_last_page = limit % 50 or 50  
-
-        # iterate over the pages to hit the limit
-        for page_num in range(1, pages_needed + 1):
-            # get url of search result page
-            url = f"{base_url}&page={page_num}" if page_num > 1 else base_url
-
-            try:
-                # give Upwork a moment after login
-                page = await safe_goto(0, page, url, context)
-
-
-                # attempt to get the body text and print for debugging
-                if logger.isEnabledFor(logging.DEBUG):
-                    try:
-                        body_text = await page.locator('body').inner_text()
-                        logger.debug(f"[Browser 0] Current page body after going to search page: {body_text[:300]}") 
-                    except TargetClosedError:
-                        logger.warning("[Browser 0]Page or browser crashed. Creating new page...")
-                        try:
-                            page = await context.new_page()
-                        except Exception as create_exc:
-                            logger.exception("[Browser 0] Failed to create new page after crash. - the browser likely crashed")
-                            raise create_exc
-                
-                # now wait for any dynamic JS to finish loading listings
-                try:
-                    await page.wait_for_selector("#main > div > div > div:nth-child(2) > div.air3-grid-container.jobs-grid-container", timeout=10000)
-                    logger.debug("[Browser 0] Job list selector appeared.")
-                except PlaywrightTimeoutError:
-                    logger.debug("[Browser 0] Job list never appeared — falling back to fixed delay.")
-
-                
-                body_text = await page.locator('body').inner_text()
-                logger.debug(f"[Browser 0] Current page body after waiting for job list selector: {body_text[:50]}") 
-                
-
-                # Wait for at least one <article> to be present, but handle empty pages
-                try:
-                    await page.wait_for_selector('article', timeout=10000)
-                except PlaywrightTimeoutError:
-                    logger.warning(f"[Browser 0] No <article> tags found for query page {page_num} (timeout). Page may be empty.")
-                    continue
-                article_elements = await page.query_selector_all('article')
-                logger.debug(f"[Browser 0] Found {len(article_elements) if article_elements else 0} <article> tags for query on page {page_num}.")
-                if not article_elements:
-                    logger.debug(f"[Browser 0] No <article> tags found for query after waiting on page {page_num}.")
-                    continue
-                # iterate over the articles and get the job urls
-                page_hrefs = []
-                for i, article in enumerate(article_elements):
-                    article_html = await article.evaluate('e => e.outerHTML')
-                    if not article_html:
-                        logger.warning(f"[Browser 0] Article {i} outerHTML is None, skipping.")
-                        continue
-                    soup = BeautifulSoup(article_html, 'html.parser')
-                    # Try the strict selector first
-                    a_tag = soup.find('a', attrs={'data-test': 'job-tile-title-link UpLink'})
-                    # Fallback: any <a> with /jobs/ and ~ in href
-                    if not a_tag:
-                        for a in soup.find_all('a', href=True):
-                            if '/jobs/' in a['href'] and '~' in a['href']:
-                                a_tag = a
-                                break
-                    if a_tag and a_tag.has_attr('href'):
-                        href = a_tag['href']
-                        match = re.search(r'~([0-9a-zA-Z]+)', href)
-                        if match:
-                            job_id = match.group(0)  # includes the '~'
-                            job_url = f"https://www.upwork.com/jobs/{job_id}"
-                            page_hrefs.append(job_url)
-                        else:
-                            logger.warning(f"[Browser 0] Article {i} anchor found but no job id in href: {href}")
-                    else:
-                        logger.warning(f"[Browser 0] Article {i} has no job link anchor. HTML: {article_html[:500]}...")
-
-            # if any error, log the error and continue
-            except Exception:
-                logger.exception(f"[Browser 0] Skipping page {page_num} due to navigation failures.")
-                continue
-
-            # For the last page, only take the needed number of jobs
-            if page_num == pages_needed:
-                page_hrefs = page_hrefs[:jobs_from_last_page]
-            
-            all_hrefs.extend(page_hrefs)
-            
-            # If we've reached our limit, stop fetching more pages
-            if len(all_hrefs) >= limit:
-                all_hrefs = all_hrefs[:limit]
-                break
-
-        search_results[query] = all_hrefs
-
-    logger.debug(f"[Browser 0] Search results: {search_results}\n")
-    return search_results
 
 def chunkify(lst: list, n: int) -> list[list]:
     """
