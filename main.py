@@ -1344,16 +1344,19 @@ async def main(jsonInput: dict) -> list[dict]:
             browser = await stack.enter_async_context(
                 AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True)
             )
-            context = await browser.new_context()
-            pages = [await context.new_page() for _ in range(NUM_DETAIL_WORKERS)]
+            contexts = [await browser.new_context() for _ in range(NUM_DETAIL_WORKERS)]
+            pages = [await contexts[i].new_page() for i in range(NUM_DETAIL_WORKERS)]
         except Exception as e:
-            logger.error(f"Error creating browser/context/pages: {e}")
+            logger.error(f"Error creating browser/contexts/pages: {e}")
             sys.exit(1)
 
-        # Login/captcha only for the first page/tab, since context shares cookies/session
+        # Login/captcha for all contexts/pages, since each is isolated
         try:
-            logger.info("Logging in and solving captcha on the first tab...")
-            await login_and_solve(0, pages[0], context, username, password, search_url, login_url, credentials_provided)
+            logger.info("Logging in and solving captcha for all workers (contexts)...")
+            await asyncio.gather(*[
+                login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
+                for idx in range(NUM_DETAIL_WORKERS)
+            ])
         except Exception as e:
             logger.error(f"Error logging in: {e}")
             sys.exit(1)
@@ -1361,7 +1364,7 @@ async def main(jsonInput: dict) -> list[dict]:
         # Get jobs for this single query using the first page
         try:
             logger.info("Getting Related Jobs...")
-            job_urls_dict = await get_job_urls(pages[0], context, search_queries, search_urls, limit=limit)
+            job_urls_dict = await get_job_urls(pages[0], contexts[0], search_queries, search_urls, limit=limit)
             job_urls = list(job_urls_dict.values())[0]
             logger.debug(f"Got {len(job_urls)} job URLs.")
         except Exception as e:
@@ -1372,10 +1375,10 @@ async def main(jsonInput: dict) -> list[dict]:
         job_chunks = chunkify(job_urls, NUM_DETAIL_WORKERS) if NUM_DETAIL_WORKERS > 0 else []
         logger.debug(f"job_chunks: {job_chunks}")
 
-        # Each detail worker processes its chunk using its own page (tab)
+        # Each detail worker processes its chunk using its own page/context
         try:
             tasks = [
-                browser_worker(idx, pages[idx], context, job_chunks[idx], credentials_provided)
+                browser_worker(idx, pages[idx], contexts[idx], job_chunks[idx], credentials_provided)
                 for idx in range(NUM_DETAIL_WORKERS)
             ] if NUM_DETAIL_WORKERS > 0 else []
 
