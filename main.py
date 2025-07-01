@@ -423,7 +423,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     logger.debug(f"[Browser {idx}] Password entered.")
     await page.press('#login_password', 'Enter')
 
-    await asyncio.sleep(1)
+    await asyncio.sleep(3)
 
     logger.debug(f"[Browser {idx}] Login process complete.")
     if logger.isEnabledFor(logging.DEBUG):
@@ -478,6 +478,8 @@ async def login_and_solve(
         logger.warning(f"[Browser {idx}] No captcha challenge detected or failed to solve captcha.")
     # if credentials are provided, login
     if credentials_provided:
+        # wait for 10 seconds per idx, adjust as needed
+        await asyncio.sleep(idx * 10)  
         # login steps 
         logger.debug(f"[Browser {idx}] Logging in...")
         page = await safe_goto(idx, page, login_url, context, timeout=60000)
@@ -1331,7 +1333,7 @@ async def main(jsonInput: dict) -> list[dict]:
     # Visit Upwork login page
     login_url = "https://www.upwork.com/ab/account-security/login"
 
-    NUM_DETAIL_WORKERS = 3
+    NUM_DETAIL_WORKERS = 4
     search_queries = [search_params.get('query', search_params.get('search_any', 'search'))]
     search_urls = [search_url]
 
