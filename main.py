@@ -427,7 +427,8 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     await asyncio.sleep(3)
 
     # check if verification failed
-    if 'Verification failed. Please try again.' in await page.locator('body').inner_text()[:100]:
+    body_text = await page.locator('body').inner_text()
+    if 'Verification failed. Please try again.' in body_text[:100]:
         logger.debug(f"[Browser {idx}] Verification failed, retrying.")
         # Wait for password field and enter password
         try:
