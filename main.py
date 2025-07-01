@@ -399,6 +399,8 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     logger.debug(f"[Browser {idx}] Username entered: {username}")
     await page.press('#login_username', 'Enter')
 
+    await asyncio.sleep(1)
+
     # Wait for password field and enter password
     try:
         await page.wait_for_selector('#login_password', timeout=10000)
