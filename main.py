@@ -476,7 +476,8 @@ def extract_nuxt_json_using_js2py(html: str) -> dict | None:
     js_code = match.group(1).strip().rstrip(';')
     js_code = "var nuxt = " + js_code
     try:
-        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+        # Capture only js2py stdout, suppressing PyJs_LONG_1_ output
+        with contextlib.redirect_stdout(io.StringIO()):
             context = js2py.EvalJs()
             context.execute(js_code)
         return context.nuxt.to_dict()
