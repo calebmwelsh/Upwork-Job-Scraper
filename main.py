@@ -423,6 +423,8 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     logger.debug(f"[Browser {idx}] Password entered.")
     await page.press('#login_password', 'Enter')
 
+    await asyncio.sleep(1)
+
     logger.debug(f"[Browser {idx}] Login process complete.")
     if logger.isEnabledFor(logging.DEBUG):
         try:
