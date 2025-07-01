@@ -312,7 +312,6 @@ def build_upwork_search_url(params: dict) -> str:
     return f"{base_url}?" + urlencode(url_params)
 
 async def safe_goto(
-    browser_idx: int,
     page: Page,
     url: str,
     browser_context: BrowserContext,
@@ -343,9 +342,9 @@ async def safe_goto(
     for attempt in range(1, max_retries + 1):
         for wait_until in wait_untils:
             try:
-                logger.debug(f"[Browser {browser_idx}] [Attempt {attempt}] goto({url}) waitUntil={wait_until}")
+                logger.debug(f"[Attempt {attempt}] goto({url}) waitUntil={wait_until}")
                 response = await page.goto(url, timeout=timeout, wait_until=wait_until)
-                logger.debug(f"[Browser {browser_idx}] [Attempt {attempt}] Navigation succeeded (waitUntil={wait_until})")
+                logger.debug(f"[Attempt {attempt}] Navigation succeeded (waitUntil={wait_until})")
                 # return working page
                 return page  
             except TargetClosedError:
@@ -357,19 +356,17 @@ async def safe_goto(
                     raise create_exc
             except Exception as e:
                 last_exc = e
-                logger.debug(f"[Browser {browser_idx}] [Attempt {attempt}] goto failed: {e}")
+                logger.debug(f"[Attempt {attempt}] goto failed: {e}")
 
-    logger.error(f"[Browser {browser_idx}] Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
+    logger.error(f"Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
     raise last_exc
 
-async def login_process(page: Page, idx: int, username: str, password: str) -> bool:
+async def login_process(page: Page, username: str, password: str) -> bool:
     """
     Automate the Upwork login process using Playwright.
 
     :param page: Playwright Page object
     :type page: Page
-    :param idx: Index of the browser/page (for logging)
-    :type idx: int
     :param username: Upwork username/email
     :type username: str
     :param password: Upwork password
@@ -381,22 +378,22 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     try:
         await page.wait_for_selector('#login_username', timeout=10000)
     except PlaywrightTimeoutError:
-        logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – username field not found, reloading page")
+        logger.debug(f"Caught PlaywrightTimeoutError – username field not found, reloading page")
         try:
-            logger.debug(f"[Browser {idx}] Reloading page")
+            logger.debug(f"Reloading page")
             await page.reload()
             await page.wait_for_selector('#login_username', timeout=10000)
         except PlaywrightTimeoutError:
             try:
                 body_text = await page.locator('body').inner_text()
-                logger.debug(f"[Browser {idx}] Current page body after waiting for username field: {body_text}")
+                logger.debug(f"Current page body after waiting for username field: {body_text}")
             except TargetClosedError:
                 # This exception means the page (or context or browser) was closed
-                logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
+                logger.debug(f"Caught TargetClosedError – page was already closed")
             return False
         
     await page.fill('#login_username', username)
-    logger.debug(f"[Browser {idx}] Username entered: {username}")
+    logger.debug(f"Username entered: {username}")
     await page.press('#login_username', 'Enter')
 
     await asyncio.sleep(2)
@@ -405,22 +402,22 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     try:
         await page.wait_for_selector('#login_password', timeout=10000)
     except PlaywrightTimeoutError:
-        logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – password field not found, reloading page")
+        logger.debug(f"Caught PlaywrightTimeoutError – password field not found, reloading page")
         try:
-            logger.debug(f"[Browser {idx}] Reloading page")
+            logger.debug(f"Reloading page")
             await page.reload()
             await page.wait_for_selector('#login_password', timeout=10000)
         except PlaywrightTimeoutError:
             try:
                 body_text = await page.locator('body').inner_text()
-                logger.debug(f"[Browser {idx}] Current page body after waiting for password field: {body_text[:100]}")
+                logger.debug(f"Current page body after waiting for password field: {body_text[:100]}")
             except TargetClosedError:
                 # This exception means the page (or context or browser) was closed
-                logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
+                logger.debug(f"Caught TargetClosedError – page was already closed")
             return False
 
     await page.fill('#login_password', password)
-    logger.debug(f"[Browser {idx}] Password entered.")
+    logger.debug(f"Password entered.")
     await page.press('#login_password', 'Enter')
 
     await asyncio.sleep(3)
@@ -428,44 +425,22 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     # check if verification failed
     body_text = await page.locator('body').inner_text()
     if 'Verification failed. Please try again.' in body_text[:100]:
-        logger.debug(f"[Browser {idx}] Verification failed, retrying.")
-        # Wait for password field and enter password
-        try:
-            await page.wait_for_selector('#login_password', timeout=10000)
-        except PlaywrightTimeoutError:
-            logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – password field not found, reloading page")
-            try:
-                logger.debug(f"[Browser {idx}] Reloading page")
-                await page.reload()
-                await page.wait_for_selector('#login_password', timeout=10000)
-            except PlaywrightTimeoutError:
-                try:
-                    body_text = await page.locator('body').inner_text()
-                    logger.debug(f"[Browser {idx}] Current page body after waiting for password field: {body_text[:100]}")
-                except TargetClosedError:
-                    # This exception means the page (or context or browser) was closed
-                    logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
-                return False
-
-        await page.fill('#login_password', password)
-        logger.debug(f"[Browser {idx}] Password entered.")
-        await page.press('#login_password', 'Enter')
+        logger.debug(f"Verification on login failed. You are not logged in.")
         
     await asyncio.sleep(3)
 
-    logger.debug(f"[Browser {idx}] Login process complete.")
+    logger.debug(f"Login process complete.")
     if logger.isEnabledFor(logging.DEBUG):
         try:
             body_text = await page.locator('body').inner_text()
-            logger.debug(f"[Browser {idx}] Current page body after entering password: {body_text[:100]}")
+            logger.debug(f"Current page body after entering password: {body_text[:100]}")
         except TargetClosedError:
             # This exception means the page (or context or browser) was closed
-            logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
+            logger.debug(f"Caught TargetClosedError – page was already closed")
     
     return True
 
 async def login_and_solve(
-    idx: int,
     page: Page,
     context: BrowserContext,
     username: str,
@@ -477,8 +452,6 @@ async def login_and_solve(
     """
     Navigate to Upwork, solve captcha if present, and log in if credentials are provided.
 
-    :param idx: Index of the browser/page (for logging)
-    :type idx: int
     :param page: Playwright Page object
     :type page: Page
     :param context: Playwright BrowserContext
@@ -496,20 +469,20 @@ async def login_and_solve(
     :return: None
     """
     # go to search url
-    await safe_goto(idx, page, search_url, context)
+    await safe_goto(page, search_url, context)
     # bypass captcha
-    logger.debug(f"[Browser {idx}] Checking for captcha challenge...")
+    logger.debug(f"Checking for captcha challenge...")
     captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts = 9, solve_click_delay = 6, wait_checkbox_attempts = 5, wait_checkbox_delay = 10, checkbox_click_attempts = 3, attempt_delay = 10)
     if captcha_solved:
-        logger.debug(f"[Browser {idx}] Successfully solved captcha challenge!")
+        logger.debug(f"Successfully solved captcha challenge!")
     else:
-        logger.warning(f"[Browser {idx}] No captcha challenge detected or failed to solve captcha.")
+        logger.warning(f"No captcha challenge detected or failed to solve captcha.")
     # if credentials are provided, login
     if credentials_provided:
         # login steps 
-        logger.debug(f"[Browser {idx}] Logging in...")
-        page = await safe_goto(idx, page, login_url, context, timeout=60000)
-        await login_process(page, idx, username, password)
+        logger.debug(f"Logging in...")
+        page = await safe_goto(page, login_url, context, timeout=60000)
+        await login_process(page, username, password)
 
 def chunkify(lst: list, n: int) -> list[list]:
     """
@@ -705,11 +678,8 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
         if 'publishTime' in nuxt_job:
             data['ts_publish'] = nuxt_job['publishTime']
 
-        
-
     # 2. Extract job-details-content div for HTML fallback
     soup = BeautifulSoup(html, 'html.parser')
-    
     # Extract category from <title> tag (after the last dash)
     if not data.get('category'):
         title_tag = soup.find('title')
@@ -730,7 +700,6 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
                 phone_verified = True
                 break
         data['phone_verified'] = phone_verified
-
 
     job_details_div = soup.find('div', class_='job-details-content')
 
@@ -806,8 +775,6 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
                     if size_div:
                         data['client_company_size'] = size_div.get_text(strip=True)
 
-
-
         # ------------------ HTML fallback for nuxt data ------------------ #
 
         # Title
@@ -816,13 +783,12 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
             if title_tag:
                 data['title'] = title_tag.get_text(strip=True)
         # Description
-        if not data.get('description'): 
+        if not data.get('description'):
             desc_div = job_details_div.find('div', {'data-test': 'Description'})
             if desc_div:
                 desc_p = desc_div.find('p')
                 if desc_p:
                     data['description'] = desc_p.get_text(separator='\n', strip=True)
-
 
         # Features (Type, Duration, Level, Hourly min/max, Fixed budget)
         features = job_details_div.find('ul', class_='features')
@@ -850,23 +816,26 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
                         if desc_text in ['Hourly', 'Fixed-price']:
                             data['type'] = desc_text
                 if not data.get('duration'):
-                    if 'Duration' in desc_text:
+                    desc_div = item.find('div', class_='description')
+                    desc_text = desc_div.get_text(strip=True) if desc_div else None
+                    if desc_text and 'Duration' in desc_text:
                         if strong and not data.get('duration'):
                             data['duration'] = strong.get_text(strip=True)
                 if not data.get('level'):
                     desc_div = item.find('div', class_='description')
-                    desc_text = desc_div.get_text(strip=True)
-                    if 'Experience Level' in desc_text:
-                        if strong:
-                            level_text = strong.get_text(strip=True).lower()
-                            if 'entry' in level_text:
-                                data['level'] = 'ENTRY_LEVEL'
-                            elif 'intermediate' in level_text:
-                                data['level'] = 'INTERMEDIATE'
-                            elif 'expert' in level_text:
-                                data['level'] = 'EXPERT'
-                            else:
-                                data['level'] = strong.get_text(strip=True)
+                    if desc_div:
+                        desc_text = desc_div.get_text(strip=True)
+                        if 'Experience Level' in desc_text:
+                            if strong:
+                                level_text = strong.get_text(strip=True).lower()
+                                if 'entry' in level_text:
+                                    data['level'] = 'ENTRY_LEVEL'
+                                elif 'intermediate' in level_text:
+                                    data['level'] = 'INTERMEDIATE'
+                                elif 'expert' in level_text:
+                                    data['level'] = 'EXPERT'
+                                else:
+                                    data['level'] = strong.get_text(strip=True)
                 if not data.get('hourly_min') and not data.get('hourly_max'):
                     if strong:
                         text = strong.get_text(strip=True)
@@ -896,7 +865,6 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
                     skills.append(skill)
             if skills and not data.get('skills'):
                 data['skills'] = skills
-
 
         # Client info
         if not data.get('client_country') or not data.get('buyer_location_city') or not data.get('buyer_location_localTime') or not data.get('client_company_size') or not data.get('client_industry') or not data.get('client_total_spent') or not data.get('client_hires') or not data.get('buyer_avgHourlyJobsRate_amount') or not data.get('buyer_stats_hoursCount') or not data.get('client_rating') or not data.get('client_reviews') or not data.get('buyer_jobs_postedCount') or not data.get('buyer_jobs_openCount'):
@@ -993,7 +961,6 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
                     reviews_span = client_section.find('span', class_='nowrap mt-1')
                     if reviews_span:
                         data['client_reviews'] = reviews_span.get_text(strip=True)
-
 
         # Activity on this job (clientActivity/totalHired, clientActivity/totalInvitedToInterview)
         if not data.get('clientActivity_totalHired') or not data.get('clientActivity_totalInvitedToInterview'):
@@ -1144,6 +1111,11 @@ UNEXTRACTABLE_FIELDS = [
 def playwright_cookies_to_requests(cookies):
     """
     Convert Playwright cookies to a RequestsCookieJar.
+
+    :param cookies: List of cookies from Playwright context
+    :type cookies: list[dict]
+    :return: RequestsCookieJar containing the cookies
+    :rtype: requests.cookies.RequestsCookieJar
     """
     jar = requests.cookies.RequestsCookieJar()
     for cookie in cookies:
@@ -1153,6 +1125,13 @@ def playwright_cookies_to_requests(cookies):
 async def get_requests_session_from_playwright(context, page):
     """
     Extract cookies and user-agent from Playwright context and page, and build a requests.Session.
+
+    :param context: Playwright BrowserContext object
+    :type context: BrowserContext
+    :param page: Playwright Page object
+    :type page: Page
+    :return: requests.Session object with cookies and user-agent set
+    :rtype: requests.Session
     """
     cookies = await context.cookies()
     user_agent = await page.evaluate("() => navigator.userAgent")
@@ -1165,6 +1144,17 @@ async def get_requests_session_from_playwright(context, page):
 def get_job_urls_requests(session, search_querys, search_urls, limit=50):
     """
     For each search query and URL, use requests to fetch the page and extract job URLs.
+
+    :param session: requests.Session object with cookies and headers set
+    :type session: requests.Session
+    :param search_querys: List of search query strings
+    :type search_querys: list[str]
+    :param search_urls: List of Upwork search URLs corresponding to the queries
+    :type search_urls: list[str]
+    :param limit: Maximum number of job URLs to extract per query
+    :type limit: int, optional
+    :return: Dictionary mapping each query to a list of job URLs
+    :rtype: dict[str, list[str]]
     """
     search_results = {}
     for query, base_url in zip(search_querys, search_urls):
@@ -1177,7 +1167,6 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
                 resp = session.get(url, timeout=30)
                 resp.raise_for_status()
                 html = resp.text
-                logger.debug(f"[requests] HTML: {html[:50]}")
                 soup = BeautifulSoup(html, 'html.parser')
                 articles = soup.find_all('article')
                 page_hrefs = []
@@ -1195,6 +1184,7 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
                             job_id = match.group(0)
                             job_url = f"https://www.upwork.com/jobs/{job_id}"
                             page_hrefs.append(job_url)
+                logger.debug(f"Found {len(page_hrefs)} jobs on page {page_num} for query '{query}'")
                 if page_num == pages_needed:
                     page_hrefs = page_hrefs[:jobs_from_last_page]
                 all_hrefs.extend(page_hrefs)
@@ -1210,6 +1200,18 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
 
 
 def fetch_job_detail(session, url, credentials_provided):
+    """
+    Fetch job detail page and extract job attributes.
+
+    :param session: requests.Session object with cookies and headers set
+    :type session: requests.Session
+    :param url: URL of the job detail page
+    :type url: str
+    :param credentials_provided: Whether Upwork credentials are provided (affects restricted fields)
+    :type credentials_provided: bool
+    :return: Dictionary of job attributes, or None if failed
+    :rtype: dict or None
+    """
     try:
         logger.debug(f"[requests] Processing URL: {url}")
         resp = session.get(url, timeout=30)
@@ -1225,9 +1227,20 @@ def fetch_job_detail(session, url, credentials_provided):
         logger.exception(f"[requests] Failed to process {url}")
         return None
 
-def browser_worker_requests(session, job_urls, credentials_provided, max_workers=10):
+def browser_worker_requests(session, job_urls, credentials_provided, max_workers=20):
     """
     Fetch job details in parallel using ThreadPoolExecutor for speed.
+
+    :param session: requests.Session object with cookies and headers set
+    :type session: requests.Session
+    :param job_urls: List of job detail page URLs to fetch
+    :type job_urls: list[str]
+    :param credentials_provided: Whether Upwork credentials are provided (affects restricted fields)
+    :type credentials_provided: bool
+    :param max_workers: Maximum number of worker threads to use
+    :type max_workers: int, optional
+    :return: List of job attribute dictionaries
+    :rtype: list[dict]
     """
     job_attributes = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -1287,7 +1300,8 @@ async def main(jsonInput: dict) -> list[dict]:
     # Visit Upwork login page
     login_url = "https://www.upwork.com/ab/account-security/login"
 
-    NUM_DETAIL_WORKERS = 3
+    NUM_DETAIL_WORKERS = 25
+
     search_queries = [search_params.get('query', search_params.get('search_any', 'search'))]
     search_urls = [search_url]
     # Only one browser for login/captcha
@@ -1301,7 +1315,7 @@ async def main(jsonInput: dict) -> list[dict]:
             sys.exit(1)
         try:
             logger.info("Solving Captcha and Logging in...")
-            await login_and_solve(0, page, context, username, password, search_url, login_url, credentials_provided)
+            await login_and_solve(page, context, username, password, search_url, login_url, credentials_provided)
         except Exception as e:
             logger.error(f"Error logging in: {e}")
             sys.exit(1)
@@ -1319,7 +1333,7 @@ async def main(jsonInput: dict) -> list[dict]:
     # Process jobs with requests
     try:
         logger.info("Getting Job Attributes with requests...")
-        job_attributes = browser_worker_requests(session, job_urls, credentials_provided)
+        job_attributes = browser_worker_requests(session, job_urls, credentials_provided, max_workers=NUM_DETAIL_WORKERS)
     except Exception as e:
         logger.error(f"Error getting job attributes: {e}")
         sys.exit(1)
@@ -1375,7 +1389,7 @@ if __name__ == "__main__":
             sys.exit(1)
     # load from apify
     elif os.environ.get("ACTOR_INPUT_KEY"):
-        print("Running from Apify")
+        logger.info("Running from Apify")
         from apify import Actor
 
         async def run_actor():
