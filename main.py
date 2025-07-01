@@ -383,6 +383,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     except PlaywrightTimeoutError:
         logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – username field not found, reloading page")
         try:
+            logger.debug(f"[Browser {idx}] Reloading page")
             await page.reload()
             await page.wait_for_selector('#login_username', timeout=10000)
         except PlaywrightTimeoutError:
@@ -404,6 +405,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     except PlaywrightTimeoutError:
         logger.debug(f"[Browser {idx}] Caught PlaywrightTimeoutError – password field not found, reloading page")
         try:
+            logger.debug(f"[Browser {idx}] Reloading page")
             await page.reload()
             await page.wait_for_selector('#login_password', timeout=10000)
         except PlaywrightTimeoutError:
