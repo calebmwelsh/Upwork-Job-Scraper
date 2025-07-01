@@ -11,15 +11,14 @@ import ast
 import sys
 import pandas as pd
 import requests
+import concurrent.futures
 
 import js2py
 from bs4 import BeautifulSoup
-from urllib.parse import urlparse
 from camoufox import AsyncCamoufox
 from playwright.async_api import Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 from playwright._impl._errors import TargetClosedError
 from utils.logger import Logger
-from contextlib import AsyncExitStack
 
 from camoufox_captcha import solve_captcha
 
@@ -1210,26 +1209,36 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
     return search_results
 
 
-def browser_worker_requests(session, job_urls, credentials_provided):
+def fetch_job_detail(session, url, credentials_provided):
+    try:
+        logger.debug(f"[requests] Processing URL: {url}")
+        resp = session.get(url, timeout=30)
+        resp.raise_for_status()
+        html = resp.text
+        job_id_match = re.search(r'~([0-9a-zA-Z]+)', url)
+        job_id = job_id_match.group(1) if job_id_match else "0"
+        job_data = extract_job_attributes_from_html(html, job_id, credentials_provided)
+        flat = {"job_id": job_id, "url": url}
+        flat.update(job_data[job_id])
+        return flat
+    except Exception:
+        logger.exception(f"[requests] Failed to process {url}")
+        return None
+
+def browser_worker_requests(session, job_urls, credentials_provided, max_workers=10):
     """
-    Process a list of Upwork job URLs using requests, extract job attributes for each, and return results.
+    Fetch job details in parallel using ThreadPoolExecutor for speed.
     """
     job_attributes = []
-    for url in job_urls:
-        try:
-            logger.debug(f"[requests] Processing URL: {url}")
-            resp = session.get(url, timeout=30)
-            resp.raise_for_status()
-            html = resp.text
-            job_id_match = re.search(r'~([0-9a-zA-Z]+)', url)
-            job_id = job_id_match.group(1) if job_id_match else "0"
-            job_data = extract_job_attributes_from_html(html, job_id, credentials_provided)
-            flat = {"job_id": job_id, "url": url}
-            flat.update(job_data[job_id])
-            job_attributes.append(flat)
-        except Exception:
-            logger.exception(f"[requests] Failed to process {url}")
-            continue
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(fetch_job_detail, session, url, credentials_provided)
+            for url in job_urls
+        ]
+        for future in concurrent.futures.as_completed(futures):
+            result = future.result()
+            if result:
+                job_attributes.append(result)
     return job_attributes
 
 
