@@ -3,7 +3,7 @@
     "name": "upwork-job-scraper",
     "version": "0.1.0",
     "buildTag": "latest",
-    "minMemoryMbytes": 8192,
+    "minMemoryMbytes": 1024,
     "maxMemoryMbytes": 32768,
     "dockerfile": "../Dockerfile",
     "readme": "./ACTOR.md",
