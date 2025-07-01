@@ -1333,61 +1333,49 @@ async def main(jsonInput: dict) -> list[dict]:
     # Visit Upwork login page
     login_url = "https://www.upwork.com/ab/account-security/login"
 
-    NUM_DETAIL_WORKERS = 4
+    NUM_DETAIL_WORKERS = 3
     search_queries = [search_params.get('query', search_params.get('search_any', 'search'))]
     search_urls = [search_url]
 
-    # Create browsers, contexts, and pages for each worker
+    # Create a single browser and context, and multiple pages (tabs) for each worker
     async with AsyncExitStack() as stack:
-        browsers = []
-        contexts = []
-        pages = []
         flattened_results = []
-        # try to create browsers
         try:
-            for _ in range(NUM_DETAIL_WORKERS):
-                browser = await stack.enter_async_context(
-                    AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True)
-                )
-                browsers.append(browser)
-                context = await browser.new_context()
-                contexts.append(context)
-                page = await context.new_page()
-                pages.append(page)
+            browser = await stack.enter_async_context(
+                AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True)
+            )
+            context = await browser.new_context()
+            pages = [await context.new_page() for _ in range(NUM_DETAIL_WORKERS)]
         except Exception as e:
-            logger.error(f"Error creating browsers: {e}")
+            logger.error(f"Error creating browser/context/pages: {e}")
             sys.exit(1)
 
-        # Login/captcha for all browsers
+        # Login/captcha only for the first page/tab, since context shares cookies/session
         try:
-            logger.info("Sending Out Monkeys to Solve Captcha...")
-            await asyncio.gather(*[
-                login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
-                for idx in range(NUM_DETAIL_WORKERS)
-            ])
+            logger.info("Logging in and solving captcha on the first tab...")
+            await login_and_solve(0, pages[0], context, username, password, search_url, login_url, credentials_provided)
         except Exception as e:
             logger.error(f"Error logging in: {e}")
             sys.exit(1)
 
-        # Get jobs for this single query using the first browser
+        # Get jobs for this single query using the first page
         try:
             logger.info("Getting Related Jobs...")
-            job_urls_dict = await get_job_urls(pages[0], contexts[0], search_queries, search_urls, limit=limit)
+            job_urls_dict = await get_job_urls(pages[0], context, search_queries, search_urls, limit=limit)
             job_urls = list(job_urls_dict.values())[0]
             logger.debug(f"Got {len(job_urls)} job URLs.")
         except Exception as e:
             logger.error(f"Error getting jobs: {e}")
             sys.exit(1)
 
-        
         # Distribute job URLs to the detail workers
         job_chunks = chunkify(job_urls, NUM_DETAIL_WORKERS) if NUM_DETAIL_WORKERS > 0 else []
         logger.debug(f"job_chunks: {job_chunks}")
 
-        # Each detail worker processes its chunk using its own browser
+        # Each detail worker processes its chunk using its own page (tab)
         try:
             tasks = [
-                browser_worker(idx, pages[idx], contexts[idx], job_chunks[idx], credentials_provided)
+                browser_worker(idx, pages[idx], context, job_chunks[idx], credentials_provided)
                 for idx in range(NUM_DETAIL_WORKERS)
             ] if NUM_DETAIL_WORKERS > 0 else []
 
