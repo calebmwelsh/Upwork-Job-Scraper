@@ -117,7 +117,7 @@ UPWORK_SUBCATEGORIES = {
     "professional & business writing": "531770282597445646"
 }
 
-def normalize_search_params(params: dict, credentials_provided: bool) -> tuple[dict, int]:
+def normalize_search_params(params: dict, credentials_provided: bool, buffer: int = 5) -> tuple[dict, int]:
     """
     Normalize search parameters from config or input JSON for Upwork job search URL.
 
@@ -129,11 +129,9 @@ def normalize_search_params(params: dict, credentials_provided: bool) -> tuple[d
     """
     result = {}
 
-    page_buffer = 5
-    
     # Get and validate the limit (no buffer here)
     try:
-        limit = int(params.get('limit', 5)) + page_buffer
+        limit = int(params.get('limit', 5)) + buffer
     except (ValueError, TypeError):
         limit = 5
         logger.warning("Invalid limit value in config, using default limit of 5")
@@ -361,84 +359,62 @@ async def safe_goto(
     logger.error(f"Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
     raise last_exc
 
-async def login_process(page: Page, username: str, password: str) -> bool:
+async def login_process(
+    login_url: str,
+    page: Page,
+    context: BrowserContext,
+    username: str,
+    password: str,
+    max_attempts: int = 5
+) -> bool:
     """
-    Automate the Upwork login process using Playwright.
+    Automate the Upwork login process using Playwright, with robust retry logic.
+    Tries reloading and creating a new page, but does NOT clear cookies unless all else fails.
 
+    :param login_url: Upwork login URL
+    :type login_url: str
     :param page: Playwright Page object
     :type page: Page
+    :param context: Playwright BrowserContext
+    :type context: BrowserContext
     :param username: Upwork username/email
     :type username: str
     :param password: Upwork password
     :type password: str
+    :param max_attempts: Maximum number of login attempts
+    :type max_attempts: int
     :return: True if login succeeded, False otherwise
     :rtype: bool
     """
-    # Wait for username field and enter username
-    try:
-        await page.wait_for_selector('#login_username', timeout=10000)
-    except PlaywrightTimeoutError:
-        logger.debug(f"Caught PlaywrightTimeoutError – username field not found, reloading page")
+    for attempt in range(1, max_attempts + 1):
         try:
-            logger.debug(f"Reloading page")
-            await page.reload()
+            page = await safe_goto(page, login_url, context, timeout=60000)
             await page.wait_for_selector('#login_username', timeout=10000)
-        except PlaywrightTimeoutError:
-            try:
-                body_text = await page.locator('body').inner_text()
-                logger.debug(f"Current page body after waiting for username field: {body_text}")
-            except TargetClosedError:
-                # This exception means the page (or context or browser) was closed
-                logger.debug(f"Caught TargetClosedError – page was already closed")
-            return False
-        
-    await page.fill('#login_username', username)
-    logger.debug(f"Username entered: {username}")
-    await page.press('#login_username', 'Enter')
-
-    await asyncio.sleep(2)
-
-    # Wait for password field and enter password
-    try:
-        await page.wait_for_selector('#login_password', timeout=10000)
-    except PlaywrightTimeoutError:
-        logger.debug(f"Caught PlaywrightTimeoutError – password field not found, reloading page")
-        try:
-            logger.debug(f"Reloading page")
-            await page.reload()
+            await page.fill('#login_username', username)
+            logger.debug(f"Username entered: {username}")
+            await page.press('#login_username', 'Enter')
+            await asyncio.sleep(2)
             await page.wait_for_selector('#login_password', timeout=10000)
-        except PlaywrightTimeoutError:
-            try:
-                body_text = await page.locator('body').inner_text()
-                logger.debug(f"Current page body after waiting for password field: {body_text[:100]}")
-            except TargetClosedError:
-                # This exception means the page (or context or browser) was closed
-                logger.debug(f"Caught TargetClosedError – page was already closed")
-            return False
-
-    await page.fill('#login_password', password)
-    logger.debug(f"Password entered.")
-    await page.press('#login_password', 'Enter')
-
-    await asyncio.sleep(3)
-
-    # check if verification failed
-    body_text = await page.locator('body').inner_text()
-    if 'Verification failed. Please try again.' in body_text[:100]:
-        logger.debug(f"Verification on login failed. You are not logged in.")
-        
-    await asyncio.sleep(3)
-
-    logger.debug(f"Login process complete.")
-    if logger.isEnabledFor(logging.DEBUG):
-        try:
+            await page.fill('#login_password', password)
+            logger.debug(f"Password entered.")
+            await page.press('#login_password', 'Enter')
+            await asyncio.sleep(3)
             body_text = await page.locator('body').inner_text()
-            logger.debug(f"Current page body after entering password: {body_text[:100]}")
-        except TargetClosedError:
-            # This exception means the page (or context or browser) was closed
-            logger.debug(f"Caught TargetClosedError – page was already closed")
-    
-    return True
+            if 'Verification failed. Please try again.' in body_text[:100] or 'Please fix the errors below' in body_text[:100]:
+                logger.debug(f"Verification on login failed. Attempt {attempt}/{max_attempts}")
+                # Try reloading or creating a new page, but do NOT clear cookies yet
+                if attempt == max_attempts // 2:
+                    logger.debug("Creating a new page due to repeated login failures.")
+                    page = await context.new_page()
+                await asyncio.sleep(3)
+                continue
+            logger.debug(f"Login process complete.")
+            return True
+        except Exception as e:
+            logger.debug(f"Login attempt {attempt} failed: {e}")
+            await asyncio.sleep(3)
+    logger.error("All login attempts failed.")
+    return False
 
 async def login_and_solve(
     page: Page,
@@ -451,22 +427,7 @@ async def login_and_solve(
 ) -> None:
     """
     Navigate to Upwork, solve captcha if present, and log in if credentials are provided.
-
-    :param page: Playwright Page object
-    :type page: Page
-    :param context: Playwright BrowserContext
-    :type context: BrowserContext
-    :param username: Upwork username/email
-    :type username: str
-    :param password: Upwork password
-    :type password: str
-    :param search_url: Upwork job search URL
-    :type search_url: str
-    :param login_url: Upwork login URL
-    :type login_url: str
-    :param credentials_provided: Whether credentials are provided
-    :type credentials_provided: bool
-    :return: None
+    If a new context or cookies are cleared, re-solve captcha before login.
     """
     # go to search url
     await safe_goto(page, search_url, context)
@@ -479,10 +440,11 @@ async def login_and_solve(
         logger.warning(f"No captcha challenge detected or failed to solve captcha.")
     # if credentials are provided, login
     if credentials_provided:
-        # login steps 
         logger.debug(f"Logging in...")
-        page = await safe_goto(page, login_url, context, timeout=60000)
-        await login_process(page, username, password)
+        login_success = await login_process(login_url, page, context, username, password)
+        if not login_success:
+            logger.error("Login failed after all attempts. If you clear cookies or create a new context, you must re-solve captcha before retrying login.")
+            # Optionally, you could add logic here to clear cookies, re-solve captcha, and retry login as a last resort.
 
 def chunkify(lst: list, n: int) -> list[list]:
     """
@@ -516,7 +478,7 @@ def extract_nuxt_json(html: str) -> dict | None:
         context.execute(js_code)
         return context.nuxt.to_dict()
     except Exception as e:
-        logger.error(f"Error evaluating window.__NUXT__ with js2py: {e}")
+        logger.debug(f"Error evaluating window.__NUXT__ with js2py: {e}")
         return None
 
 def extract_job_attributes_from_html(html: str, job_id: str, credentials_provided: bool = True) -> dict:
@@ -536,6 +498,8 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
 
     # 1. Extract JSON from full HTML
     nuxt_data = extract_nuxt_json(html)
+    if not nuxt_data:
+        return {job_id: None}
     nuxt_job = None
     nuxt_buyer = None
     if nuxt_data:
@@ -1221,6 +1185,8 @@ def fetch_job_detail(session, url, credentials_provided):
         job_id = job_id_match.group(1) if job_id_match else "0"
         job_data = extract_job_attributes_from_html(html, job_id, credentials_provided)
         flat = {"job_id": job_id, "url": url}
+        if job_data[job_id] is None:
+            return None
         flat.update(job_data[job_id])
         return flat
     except Exception:
@@ -1290,7 +1256,8 @@ async def main(jsonInput: dict) -> list[dict]:
     save_csv = general_params.get('save_csv', False)
 
     # Normalize search params and get limit
-    normalized_search_params, limit = normalize_search_params(search_params, credentials_provided)
+    buffer = 10
+    normalized_search_params, limit = normalize_search_params(search_params, credentials_provided, buffer)
 
     # Build search URL using the function
     logger.info("Building search URL...")
@@ -1337,9 +1304,12 @@ async def main(jsonInput: dict) -> list[dict]:
     except Exception as e:
         logger.error(f"Error getting job attributes: {e}")
         sys.exit(1)
+    # Filter out jobs where Nuxt data was missing (i.e., job is None)
+    job_attributes = [job for job in job_attributes if job is not None and all(v is not None for v in job.values())]
+    logger.debug(f"job_attributes after filter: {len(job_attributes)}")
     # Trim to the original limit
-    logger.debug(f"limit: {limit-5}")
-    job_attributes = job_attributes[:limit-5]
+    logger.debug(f"limit: {limit-buffer}")
+    job_attributes = job_attributes[:limit-buffer]
     # Push to Apify dataset if running on Apify
     if os.environ.get("ACTOR_INPUT_KEY"):
         for item in job_attributes:
