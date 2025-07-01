@@ -12,6 +12,8 @@ import sys
 import pandas as pd
 import requests
 import concurrent.futures
+import io
+import contextlib
 
 import js2py
 from bs4 import BeautifulSoup
@@ -459,7 +461,7 @@ def chunkify(lst: list, n: int) -> list[list]:
     """
     return [lst[i::n] for i in range(n)]
 
-def extract_nuxt_json(html: str) -> dict | None:
+def extract_nuxt_json_using_js2py(html: str) -> dict | None:
     """
     Extract and evaluate the window.__NUXT__ script content from HTML using js2py.
 
@@ -474,8 +476,9 @@ def extract_nuxt_json(html: str) -> dict | None:
     js_code = match.group(1).strip().rstrip(';')
     js_code = "var nuxt = " + js_code
     try:
-        context = js2py.EvalJs()
-        context.execute(js_code)
+        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            context = js2py.EvalJs()
+            context.execute(js_code)
         return context.nuxt.to_dict()
     except Exception as e:
         logger.debug(f"Error evaluating window.__NUXT__ with js2py: {e}")
@@ -497,7 +500,7 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
     data = {}
 
     # 1. Extract JSON from full HTML
-    nuxt_data = extract_nuxt_json(html)
+    nuxt_data = extract_nuxt_json_using_js2py(html)
     if not nuxt_data:
         return {job_id: None}
     nuxt_job = None
@@ -1256,7 +1259,7 @@ async def main(jsonInput: dict) -> list[dict]:
     save_csv = general_params.get('save_csv', False)
 
     # Normalize search params and get limit
-    buffer = 10
+    buffer = 12
     normalized_search_params, limit = normalize_search_params(search_params, credentials_provided, buffer)
 
     # Build search URL using the function
