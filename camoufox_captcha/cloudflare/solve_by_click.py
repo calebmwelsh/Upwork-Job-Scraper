@@ -123,19 +123,6 @@ async def solve_cloudflare_by_click(
             logger.debug(f'Failed to click checkbox after maximum attempts')
             continue
 
-        # wait for Cloudflare to process the click
-        if isinstance(queryable, Page):
-            try:
-                await queryable.wait_for_load_state("networkidle", timeout=solve_click_delay * 1000)
-                logger.debug("Page reached 'networkidle' state after click.")
-            except PlaywrightTimeoutError:
-                logger.debug(f"Page did not reach 'networkidle' within {solve_click_delay}s. "f"Falling back to a fixed delay.")
-                await asyncio.sleep(solve_click_delay)
-        else:
-            logger.debug(f"Waiting for {solve_click_delay} seconds after click")
-            await asyncio.sleep(solve_click_delay)
-
-
         # attempt to get the body text and print for debugging
         if logger.isEnabledFor(logging.DEBUG):
             try:
