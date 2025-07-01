@@ -1333,11 +1333,12 @@ async def main(jsonInput: dict) -> list[dict]:
     # Visit Upwork login page
     login_url = "https://www.upwork.com/ab/account-security/login"
 
-    NUM_DETAIL_WORKERS = 3
+    NUM_DETAIL_WORKERS = 1
     search_queries = [search_params.get('query', search_params.get('search_any', 'search'))]
     search_urls = [search_url]
 
     # Create a single browser and context, and multiple pages (tabs) for each worker
+    logger.info("Creating browser/contexts/pages...")
     async with AsyncExitStack() as stack:
         flattened_results = []
         try:

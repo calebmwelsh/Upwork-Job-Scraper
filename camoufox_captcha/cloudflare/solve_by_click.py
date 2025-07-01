@@ -135,7 +135,6 @@ async def solve_cloudflare_by_click(
                 except Exception as create_exc:
                     logger.exception("Failed to create new page after crash. - the browser likely crashed")
                     raise create_exc
-        
 
         # 5. verify success
         if challenge_type == "turnstile":
