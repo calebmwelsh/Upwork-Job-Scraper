@@ -10,6 +10,7 @@ import time
 import ast
 import sys
 import pandas as pd
+import requests
 
 import js2py
 from bs4 import BeautifulSoup
@@ -399,7 +400,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     logger.debug(f"[Browser {idx}] Username entered: {username}")
     await page.press('#login_username', 'Enter')
 
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
 
     # Wait for password field and enter password
     try:
@@ -413,7 +414,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
         except PlaywrightTimeoutError:
             try:
                 body_text = await page.locator('body').inner_text()
-                logger.debug(f"[Browser {idx}] Current page body after waiting for password field: {body_text}")
+                logger.debug(f"[Browser {idx}] Current page body after waiting for password field: {body_text[:100]}")
             except TargetClosedError:
                 # This exception means the page (or context or browser) was closed
                 logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
@@ -429,7 +430,7 @@ async def login_process(page: Page, idx: int, username: str, password: str) -> b
     if logger.isEnabledFor(logging.DEBUG):
         try:
             body_text = await page.locator('body').inner_text()
-            logger.debug(f"[Browser {idx}] Current page body after entering password: {body_text}")
+            logger.debug(f"[Browser {idx}] Current page body after entering password: {body_text[:100]}")
         except TargetClosedError:
             # This exception means the page (or context or browser) was closed
             logger.debug(f"[Browser {idx}] Caught TargetClosedError – page was already closed")
@@ -478,8 +479,6 @@ async def login_and_solve(
         logger.warning(f"[Browser {idx}] No captcha challenge detected or failed to solve captcha.")
     # if credentials are provided, login
     if credentials_provided:
-        # wait for 10 seconds per idx, adjust as needed
-        await asyncio.sleep(idx * 10)  
         # login steps 
         logger.debug(f"[Browser {idx}] Logging in...")
         page = await safe_goto(idx, page, login_url, context, timeout=60000)
@@ -1288,6 +1287,97 @@ UNEXTRACTABLE_FIELDS = [
     "url"
 ]
 
+def playwright_cookies_to_requests(cookies):
+    """
+    Convert Playwright cookies to a RequestsCookieJar.
+    """
+    jar = requests.cookies.RequestsCookieJar()
+    for cookie in cookies:
+        jar.set(cookie['name'], cookie['value'], domain=cookie['domain'], path=cookie['path'])
+    return jar
+
+async def get_requests_session_from_playwright(context, page):
+    """
+    Extract cookies and user-agent from Playwright context and page, and build a requests.Session.
+    """
+    cookies = await context.cookies()
+    user_agent = await page.evaluate("() => navigator.userAgent")
+    session = requests.Session()
+    session.cookies = playwright_cookies_to_requests(cookies)
+    session.headers.update({'User-Agent': user_agent})
+    return session
+
+
+def get_job_urls_requests(session, search_querys, search_urls, limit=50):
+    """
+    For each search query and URL, use requests to fetch the page and extract job URLs.
+    """
+    search_results = {}
+    for query, base_url in zip(search_querys, search_urls):
+        all_hrefs = []
+        pages_needed = (limit + 49) // 50
+        jobs_from_last_page = limit % 50 or 50
+        for page_num in range(1, pages_needed + 1):
+            url = f"{base_url}&page={page_num}" if page_num > 1 else base_url
+            try:
+                resp = session.get(url, timeout=30)
+                resp.raise_for_status()
+                html = resp.text
+                logger.debug(f"[requests] HTML: {html[:50]}")
+                soup = BeautifulSoup(html, 'html.parser')
+                articles = soup.find_all('article')
+                page_hrefs = []
+                for i, article in enumerate(articles):
+                    a_tag = article.find('a', attrs={'data-test': 'job-tile-title-link UpLink'})
+                    if not a_tag:
+                        for a in article.find_all('a', href=True):
+                            if '/jobs/' in a['href'] and '~' in a['href']:
+                                a_tag = a
+                                break
+                    if a_tag and a_tag.has_attr('href'):
+                        href = a_tag['href']
+                        match = re.search(r'~([0-9a-zA-Z]+)', href)
+                        if match:
+                            job_id = match.group(0)
+                            job_url = f"https://www.upwork.com/jobs/{job_id}"
+                            page_hrefs.append(job_url)
+                if page_num == pages_needed:
+                    page_hrefs = page_hrefs[:jobs_from_last_page]
+                all_hrefs.extend(page_hrefs)
+                if len(all_hrefs) >= limit:
+                    all_hrefs = all_hrefs[:limit]
+                    break
+            except Exception as e:
+                logger.exception(f"[requests] Skipping page {page_num} due to navigation failures: {e}")
+                continue
+        search_results[query] = all_hrefs
+    logger.debug(f"[requests] Search results: {search_results}\n")
+    return search_results
+
+
+def browser_worker_requests(session, job_urls, credentials_provided):
+    """
+    Process a list of Upwork job URLs using requests, extract job attributes for each, and return results.
+    """
+    job_attributes = []
+    for url in job_urls:
+        try:
+            logger.debug(f"[requests] Processing URL: {url}")
+            resp = session.get(url, timeout=30)
+            resp.raise_for_status()
+            html = resp.text
+            job_id_match = re.search(r'~([0-9a-zA-Z]+)', url)
+            job_id = job_id_match.group(1) if job_id_match else "0"
+            job_data = extract_job_attributes_from_html(html, job_id, credentials_provided)
+            flat = {"job_id": job_id, "url": url}
+            flat.update(job_data[job_id])
+            job_attributes.append(flat)
+        except Exception:
+            logger.exception(f"[requests] Failed to process {url}")
+            continue
+    return job_attributes
+
+
 async def main(jsonInput: dict) -> list[dict]:
     """
     Main entry point for the Upwork Job Scraper. Orchestrates browser setup, login, job search, and extraction.
@@ -1336,98 +1426,59 @@ async def main(jsonInput: dict) -> list[dict]:
     NUM_DETAIL_WORKERS = 3
     search_queries = [search_params.get('query', search_params.get('search_any', 'search'))]
     search_urls = [search_url]
-
-    # Create browsers, contexts, and pages for each worker
-    async with AsyncExitStack() as stack:
-        browsers = []
-        contexts = []
-        pages = []
-        flattened_results = []
-        # try to create browsers
-        logger.info("Creating browser/contexts/pages...")
+    # Only one browser for login/captcha
+    async with AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True) as browser:
+        logger.info("Creating browser/context/page for login...")
         try:
-            for _ in range(NUM_DETAIL_WORKERS):
-                browser = await stack.enter_async_context(
-                    AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True)
-                )
-                browsers.append(browser)
-                context = await browser.new_context()
-                contexts.append(context)
-                page = await context.new_page()
-                pages.append(page)
+            context = await browser.new_context()
+            page = await context.new_page()
         except Exception as e:
-            logger.error(f"Error creating browsers: {e}")
+            logger.error(f"Error creating browser: {e}")
             sys.exit(1)
-
-        # Login/captcha for all browsers
         try:
-            logger.info("Sending Out Monkeys to Solve Captcha...")
-            await asyncio.gather(*[
-                login_and_solve(idx, pages[idx], contexts[idx], username, password, search_url, login_url, credentials_provided)
-                for idx in range(NUM_DETAIL_WORKERS)
-            ])
+            logger.info("Solving Captcha and Logging in...")
+            await login_and_solve(0, page, context, username, password, search_url, login_url, credentials_provided)
         except Exception as e:
             logger.error(f"Error logging in: {e}")
             sys.exit(1)
+        # Extract cookies and user-agent, build requests session
+        session = await get_requests_session_from_playwright(context, page)
+    # Use requests for all scraping
+    try:
+        logger.info("Getting Related Jobs with requests...")
+        job_urls_dict = get_job_urls_requests(session, search_queries, search_urls, limit=limit)
+        job_urls = list(job_urls_dict.values())[0]
+        logger.debug(f"Got {len(job_urls)} job URLs.")
+    except Exception as e:
+        logger.error(f"Error getting jobs: {e}")
+        sys.exit(1)
+    # Process jobs with requests
+    try:
+        logger.info("Getting Job Attributes with requests...")
+        job_attributes = browser_worker_requests(session, job_urls, credentials_provided)
+    except Exception as e:
+        logger.error(f"Error getting job attributes: {e}")
+        sys.exit(1)
+    # Trim to the original limit
+    logger.debug(f"limit: {limit-5}")
+    job_attributes = job_attributes[:limit-5]
+    # Push to Apify dataset if running on Apify
+    if os.environ.get("ACTOR_INPUT_KEY"):
+        for item in job_attributes:
+            await Actor.push_data(item)
+    if save_csv:
+        df = pd.DataFrame(job_attributes)
+        df = df.sort_index(axis=1)
+        df.to_csv(f'data/jobs/csv/job_results_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', index=False)
+    end_time = time.time()
+    elapsed = end_time - start_time
+    logger.info("Job Fetch Complete!")
+    logger.info(f"Number of results: {len(job_attributes)}")
+    minutes = int(elapsed // 60)
+    seconds = int(elapsed % 60)
+    logger.info(f"Total run time: {minutes}m {seconds}s ({elapsed:.2f} seconds)")
+    return job_attributes
 
-        # Get jobs for this single query using the first browser
-        try:
-            logger.info("Getting Related Jobs...")
-            job_urls_dict = await get_job_urls(pages[0], contexts[0], search_queries, search_urls, limit=limit)
-            job_urls = list(job_urls_dict.values())[0]
-            logger.debug(f"Got {len(job_urls)} job URLs.")
-        except Exception as e:
-            logger.error(f"Error getting jobs: {e}")
-            sys.exit(1)
-
-        
-        # Distribute job URLs to the detail workers
-        job_chunks = chunkify(job_urls, NUM_DETAIL_WORKERS) if NUM_DETAIL_WORKERS > 0 else []
-        logger.debug(f"job_chunks: {job_chunks}")
-
-        # Each detail worker processes its chunk using its own browser
-        try:
-            tasks = [
-                browser_worker(idx, pages[idx], contexts[idx], job_chunks[idx], credentials_provided)
-                for idx in range(NUM_DETAIL_WORKERS)
-            ] if NUM_DETAIL_WORKERS > 0 else []
-
-            logger.info("Getting Job Attributes...")
-            batch_results = await asyncio.gather(*tasks) if tasks else []
-            # Flatten the batch results
-            flattened_results = [item for sublist in batch_results for item in sublist]
-        except Exception as e:
-            logger.error(f"Error getting job attributes: {e}")
-            sys.exit(1)
-
-        # Trim to the original limit
-        logger.debug(f"limit: {limit-5}")
-        flattened_results = flattened_results[:limit-5]
-
-        # Push to Apify dataset if running on Apify
-        if os.environ.get("ACTOR_INPUT_KEY"):
-            for item in flattened_results:
-                await Actor.push_data(item)
-
-        # save to csv
-        if save_csv:
-            df = pd.DataFrame(flattened_results)
-            df = df.sort_index(axis=1)
-            df.to_csv(f'data/jobs/csv/job_results_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', index=False)
-
-        # log the current time
-        end_time = time.time()
-        # log the elapsed time
-        elapsed = end_time - start_time
-        logger.info("Job Fetch Complete!")
-        # Print the number of results
-        logger.info(f"Number of results: {len(flattened_results)}")
-        # print total run time
-        minutes = int(elapsed // 60)
-        seconds = int(elapsed % 60)
-        logger.info(f"Total run time: {minutes}m {seconds}s ({elapsed:.2f} seconds)")
-        return flattened_results
-    
 
 if __name__ == "__main__":
     # set argparse

@@ -10,6 +10,8 @@ testing/
 test*
 multi_context.py
 multi_browser.py
+extract_request.py
+
 # Data output and logs (avoid committing large files)
 data/
 Notes.txt
