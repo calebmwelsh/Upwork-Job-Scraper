@@ -418,11 +418,8 @@
             "type": "string",
             "example": "INFO",
             "description": "Select the desired log level.",
-            "items": {
-                "type": "string",
-                "enum": ["INFO", "DEBUG", "WARNING", "ERROR"],
-                "enumTitles": ["INFO", "DEBUG", "WARNING", "ERROR"]
-            },
+            "enum": ["INFO", "DEBUG", "WARNING", "ERROR"],
+            "enumTitles": ["INFO", "DEBUG", "WARNING", "ERROR"],
             "default": "INFO"
         }
     }
