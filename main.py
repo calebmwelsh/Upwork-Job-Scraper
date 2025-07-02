@@ -367,7 +367,7 @@ async def login_process(
     context: BrowserContext,
     username: str,
     password: str,
-    max_attempts: int = 5
+    max_attempts: int = 2
 ) -> bool:
     """
     Automate the Upwork login process using Playwright, with robust retry logic.
@@ -1374,7 +1374,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # set logger
-    logger_obj = Logger(level="DEBUG")
+    logger_obj = Logger(level="INFO")
     logger = logger_obj.get_logger()
 
     # Load credentials/input data from environment variable or argument
