@@ -439,7 +439,7 @@ async def login_and_solve(
     if captcha_solved:
         logger.debug(f"Successfully solved captcha challenge!")
     else:
-        logger.warning(f"No captcha challenge detected or failed to solve captcha.")
+        logger.warning(f"⚠️ No captcha challenge detected or failed to solve captcha.")
     # if credentials are provided, login
     if credentials_provided:
         logger.debug(f"Logging in...")
@@ -454,30 +454,20 @@ async def login_and_solve(
                 # Re-solve captcha
                 captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts=9, solve_click_delay=6, wait_checkbox_attempts=5, wait_checkbox_delay=10, checkbox_click_attempts=3, attempt_delay=10)
                 if captcha_solved:
-                    logger.info("Captcha solved after clearing cookies. Retrying login...")
+                    logger.info("✅ Captcha solved after clearing cookies. Retrying login...")
                 else:
-                    logger.warning("Captcha could not be solved after clearing cookies.")
+                    logger.warning("⚠️ Captcha could not be solved after clearing cookies.")
                 # Retry login
                 login_success = await login_process(login_url, page, context, username, password)
                 if not login_success:
                     logger.error("⚠️Login still failed after last resort attempt (clear cookies, re-solve captcha, retry login). Aborting.")
                 else:
                     logger.info("✅ Login succeeded after last resort attempt.")
+                    # return page and context so that new context is used for scraping
+                    return page, context
             except Exception as e:
                 logger.error(f"⚠️ Exception during last resort login attempt: {e}")
-
-def chunkify(lst: list, n: int) -> list[list]:
-    """
-    Split a list into n roughly equal chunks.
-
-    :param lst: List to split
-    :type lst: list
-    :param n: Number of chunks
-    :type n: int
-    :return: List of n lists (chunks)
-    :rtype: list[list]
-    """
-    return [lst[i::n] for i in range(n)]
+    return page, context
 
 def extract_nuxt_json_using_js2py(html: str) -> dict | None:
     """
@@ -1304,7 +1294,7 @@ async def main(jsonInput: dict) -> list[dict]:
             sys.exit(1)
         try:
             logger.info("🔒 Solving Captcha and Logging in...")
-            await login_and_solve(page, context, username, password, search_url, login_url, credentials_provided)
+            page, context = await login_and_solve(page, context, username, password, search_url, login_url, credentials_provided)
         except Exception as e:
             logger.error(f"⚠️ Error logging in: {e}")
             sys.exit(1)
@@ -1312,7 +1302,7 @@ async def main(jsonInput: dict) -> list[dict]:
         session = await get_requests_session_from_playwright(context, page)
     # Use requests for all scraping
     try:
-        logger.info("💼 Getting Related Jobs with requests...")
+        logger.info("💼 Getting Related Jobs...")
         job_urls_dict = get_job_urls_requests(session, search_queries, search_urls, limit=limit)
         job_urls = list(job_urls_dict.values())[0]
         logger.debug(f"Got {len(job_urls)} job URLs.")
