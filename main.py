@@ -451,7 +451,7 @@ async def login_and_solve(
     await safe_goto(page, search_url, context)
     # bypass captcha
     logger.debug(f"Checking for captcha challenge...")
-    captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts = 9, solve_click_delay = 6, wait_checkbox_attempts = 5, wait_checkbox_delay = 10, checkbox_click_attempts = 3, attempt_delay = 10)
+    captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts = 5, solve_click_delay = 6, wait_checkbox_attempts = 5, wait_checkbox_delay = 5, checkbox_click_attempts = 3, attempt_delay = 5)
     if captcha_solved:
         logger.debug(f"Successfully solved captcha challenge!")
     else:
@@ -469,7 +469,7 @@ async def login_and_solve(
                 page = await context.new_page()
                 await safe_goto(page, search_url, context)
                 # Re-solve captcha
-                captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts=9, solve_click_delay=6, wait_checkbox_attempts=5, wait_checkbox_delay=10, checkbox_click_attempts=3, attempt_delay=10)
+                captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts = 5, solve_click_delay = 6, wait_checkbox_attempts = 5, wait_checkbox_delay = 5, checkbox_click_attempts = 3, attempt_delay = 5)
                 if captcha_solved:
                     logger.info("✅ Captcha solved after clearing cookies. Retrying login...")
                 else:
@@ -1244,7 +1244,7 @@ def fetch_job_detail(session, url, credentials_provided):
         flat.update(job_data[job_id])
         return flat
     except Exception:
-        logger.exception(f"[requests] Failed to process {url}")
+        logger.debug(f"[requests] Failed to process {url}")
         return None
 
 def browser_worker_requests(session, job_urls, credentials_provided, max_workers=20):
@@ -1389,7 +1389,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # set logger
-    logger_obj = Logger(level="DEBUG")
+    logger_obj = Logger(level="INFO")
     logger = logger_obj.get_logger()
 
     # Load credentials/input data from environment variable or argument
