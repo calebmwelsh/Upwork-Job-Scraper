@@ -1264,7 +1264,7 @@ async def main(jsonInput: dict) -> list[dict]:
     normalized_search_params, limit = normalize_search_params(search_params, credentials_provided, buffer)
 
     # Build search URL using the function
-    logger.info("Building search URL...")
+    logger.info("🏗️ Building search URL...")
     search_url = build_upwork_search_url(normalized_search_params)
     logger.debug(f"Search URL: {search_url}")
 
@@ -1277,7 +1277,7 @@ async def main(jsonInput: dict) -> list[dict]:
     search_urls = [search_url]
     # Only one browser for login/captcha
     async with AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True) as browser:
-        logger.info("Creating browser/context/page for login...")
+        logger.info("🌐 Creating browser/context/page for login...")
         try:
             context = await browser.new_context()
             page = await context.new_page()
@@ -1285,7 +1285,7 @@ async def main(jsonInput: dict) -> list[dict]:
             logger.error(f"Error creating browser: {e}")
             sys.exit(1)
         try:
-            logger.info("Solving Captcha and Logging in...")
+            logger.info("🔒 Solving Captcha and Logging in...")
             await login_and_solve(page, context, username, password, search_url, login_url, credentials_provided)
         except Exception as e:
             logger.error(f"Error logging in: {e}")
@@ -1294,7 +1294,7 @@ async def main(jsonInput: dict) -> list[dict]:
         session = await get_requests_session_from_playwright(context, page)
     # Use requests for all scraping
     try:
-        logger.info("Getting Related Jobs with requests...")
+        logger.info("💼 Getting Related Jobs with requests...")
         job_urls_dict = get_job_urls_requests(session, search_queries, search_urls, limit=limit)
         job_urls = list(job_urls_dict.values())[0]
         logger.debug(f"Got {len(job_urls)} job URLs.")
@@ -1303,7 +1303,7 @@ async def main(jsonInput: dict) -> list[dict]:
         sys.exit(1)
     # Process jobs with requests
     try:
-        logger.info("Getting Job Attributes with requests...")
+        logger.info("🏢 Getting Job Attributes with requests...")
         job_attributes = browser_worker_requests(session, job_urls, credentials_provided, max_workers=NUM_DETAIL_WORKERS)
     except Exception as e:
         logger.error(f"Error getting job attributes: {e}")
@@ -1324,11 +1324,11 @@ async def main(jsonInput: dict) -> list[dict]:
         df.to_csv(f'data/jobs/csv/job_results_{datetime.datetime.now().strftime("%Y%m%d_%H%M%S")}.csv', index=False)
     end_time = time.time()
     elapsed = end_time - start_time
-    logger.info("Job Fetch Complete!")
-    logger.info(f"Number of results: {len(job_attributes)}")
+    logger.info("🏁 Job Fetch Complete!")
+    logger.info(f"🎯 Number of results: {len(job_attributes)}")
     minutes = int(elapsed // 60)
     seconds = int(elapsed % 60)
-    logger.info(f"Total run time: {minutes}m {seconds}s ({elapsed:.2f} seconds)")
+    logger.info(f"🕒 Total run time: {minutes}m {seconds}s ({elapsed:.2f} seconds)")
     return job_attributes
 
 
@@ -1363,7 +1363,6 @@ if __name__ == "__main__":
             sys.exit(1)
     # load from apify
     elif os.environ.get("ACTOR_INPUT_KEY"):
-        logger.info("Running from Apify")
         from apify import Actor
 
         async def run_actor():
