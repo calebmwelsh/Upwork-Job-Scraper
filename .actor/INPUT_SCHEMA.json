@@ -410,6 +410,20 @@
                 "enumTitles": ["Less than one month", "1 to 3 months", "3 to 6 months", "More than 6 months"]
             },
             "default": []
+        },
+        "log_level": {
+            "sectionCaption": "📰 Logging",
+            "sectionDescription": "",
+            "title": "🎚️ Log Level",
+            "type": "string",
+            "example": "INFO",
+            "description": "Select the desired log level.",
+            "items": {
+                "type": "string",
+                "enum": ["INFO", "DEBUG", "WARNING", "ERROR"],
+                "enumTitles": ["INFO", "DEBUG", "WARNING", "ERROR"]
+            },
+            "default": "INFO"
         }
     }
 } 

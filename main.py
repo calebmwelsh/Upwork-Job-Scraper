@@ -1415,6 +1415,11 @@ if __name__ == "__main__":
                 'search': search_data,
                 'general': {}
             }
+            # set logger
+            log_level = search_data.pop('log_level', None)
+            if log_level:
+                logger_obj = Logger(level=log_level)
+                logger = logger_obj.get_logger()
             # Run your existing scraper logic
             logger.debug(f"input_data: {input_data}")
             result = await main(input_data)
