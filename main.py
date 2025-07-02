@@ -408,7 +408,6 @@ async def login_process(
                 if attempt == max_attempts // 2:
                     logger.debug("Creating a new page due to repeated login failures.")
                     page = await context.new_page()
-                await asyncio.sleep(3)
                 continue
             logger.debug(f"Login process complete.")
             return True
@@ -430,6 +429,23 @@ async def login_and_solve(
     """
     Navigate to Upwork, solve captcha if present, and log in if credentials are provided.
     If a new context or cookies are cleared, re-solve captcha before login.
+
+    :param page: Playwright Page object to use for navigation and interaction
+    :type page: Page
+    :param context: Playwright BrowserContext object
+    :type context: BrowserContext
+    :param username: Upwork username/email
+    :type username: str
+    :param password: Upwork password
+    :type password: str
+    :param search_url: Upwork job search URL to visit initially
+    :type search_url: str
+    :param login_url: Upwork login URL
+    :type login_url: str
+    :param credentials_provided: Whether Upwork credentials are provided (affects login behavior)
+    :type credentials_provided: bool
+    :return: Tuple of (page, context) after login/captcha (or attempted login)
+    :rtype: tuple[Page, BrowserContext]
     """
     # go to search url
     await safe_goto(page, search_url, context)
@@ -452,7 +468,6 @@ async def login_and_solve(
                 await context.clear_cookies()
                 page = await context.new_page()
                 await safe_goto(page, search_url, context)
-                await asyncio.sleep(2)
                 # Re-solve captcha
                 captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts=9, solve_click_delay=6, wait_checkbox_attempts=5, wait_checkbox_delay=10, checkbox_click_attempts=3, attempt_delay=10)
                 if captcha_solved:
@@ -1374,7 +1389,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # set logger
-    logger_obj = Logger(level="INFO")
+    logger_obj = Logger(level="DEBUG")
     logger = logger_obj.get_logger()
 
     # Load credentials/input data from environment variable or argument
