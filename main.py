@@ -1264,7 +1264,7 @@ async def main(jsonInput: dict) -> list[dict]:
     normalized_search_params, limit = normalize_search_params(search_params, credentials_provided, buffer)
 
     # Build search URL using the function
-    logger.info("🏗️  Building search URL...")
+    logger.info("🏗️ Building search URL...")
     search_url = build_upwork_search_url(normalized_search_params)
     logger.debug(f"Search URL: {search_url}")
 
