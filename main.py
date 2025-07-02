@@ -1234,7 +1234,7 @@ async def main(jsonInput: dict) -> list[dict]:
     :return: List of job attribute dictionaries
     :rtype: list[dict]
     """
-    logger.info("Starting Upwork Job Scraper...")
+    logger.info("🏁 Starting Upwork Job Scraper...")
     # log the current time
     start_time = time.time()
 
@@ -1264,7 +1264,7 @@ async def main(jsonInput: dict) -> list[dict]:
     normalized_search_params, limit = normalize_search_params(search_params, credentials_provided, buffer)
 
     # Build search URL using the function
-    logger.info("🏗️ Building search URL...")
+    logger.info("🏗️  Building search URL...")
     search_url = build_upwork_search_url(normalized_search_params)
     logger.debug(f"Search URL: {search_url}")
 
@@ -1282,13 +1282,13 @@ async def main(jsonInput: dict) -> list[dict]:
             context = await browser.new_context()
             page = await context.new_page()
         except Exception as e:
-            logger.error(f"Error creating browser: {e}")
+            logger.error(f"⚠️ Error creating browser: {e}")
             sys.exit(1)
         try:
             logger.info("🔒 Solving Captcha and Logging in...")
             await login_and_solve(page, context, username, password, search_url, login_url, credentials_provided)
         except Exception as e:
-            logger.error(f"Error logging in: {e}")
+            logger.error(f"⚠️ Error logging in: {e}")
             sys.exit(1)
         # Extract cookies and user-agent, build requests session
         session = await get_requests_session_from_playwright(context, page)
@@ -1299,14 +1299,14 @@ async def main(jsonInput: dict) -> list[dict]:
         job_urls = list(job_urls_dict.values())[0]
         logger.debug(f"Got {len(job_urls)} job URLs.")
     except Exception as e:
-        logger.error(f"Error getting jobs: {e}")
+        logger.error(f"⚠️ Error getting jobs: {e}")
         sys.exit(1)
     # Process jobs with requests
     try:
         logger.info("🏢 Getting Job Attributes with requests...")
         job_attributes = browser_worker_requests(session, job_urls, credentials_provided, max_workers=NUM_DETAIL_WORKERS)
     except Exception as e:
-        logger.error(f"Error getting job attributes: {e}")
+        logger.error(f"⚠️ Error getting job attributes: {e}")
         sys.exit(1)
     # Filter out jobs where Nuxt data was missing (i.e., job is None)
     job_attributes = [job for job in job_attributes if job is not None and all(v is not None for v in job.values())]
@@ -1352,14 +1352,14 @@ if __name__ == "__main__":
                 # It might be a dict string, so we can use ast.literal_eval
                 input_data = ast.literal_eval(json_input_str)
             except (ValueError, SyntaxError) as e:
-                logger.error(f"Failed to parse jsonInput from environment variable: {e}")
+                logger.error(f"⚠️ Failed to parse jsonInput from environment variable: {e}")
                 sys.exit(1)
     # load from argument
     elif args.jsonInput:
         try:
             input_data = json.loads(args.jsonInput)
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse input JSON: {e}")
+            logger.error(f"⚠️ Failed to parse input JSON: {e}")
             sys.exit(1)
     # load from apify
     elif os.environ.get("ACTOR_INPUT_KEY"):
