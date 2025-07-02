@@ -358,7 +358,7 @@ async def safe_goto(
                 last_exc = e
                 logger.debug(f"[Attempt {attempt}] goto failed: {e}")
 
-    logger.error(f"Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
+    logger.error(f"⚠️ Failed to navigate to {url} after {max_retries} attempts", exc_info=last_exc)
     raise last_exc
 
 async def login_process(
@@ -415,7 +415,7 @@ async def login_process(
         except Exception as e:
             logger.debug(f"Login attempt {attempt} failed: {e}")
             await asyncio.sleep(3)
-    logger.error("All login attempts failed.")
+    logger.error("⚠️ All login attempts failed.")
     return False
 
 async def login_and_solve(
@@ -444,9 +444,27 @@ async def login_and_solve(
     if credentials_provided:
         logger.debug(f"Logging in...")
         login_success = await login_process(login_url, page, context, username, password)
+        # if login fails, try clearing cookies and re-solving captcha
         if not login_success:
-            logger.error("Login failed after all attempts. If you clear cookies or create a new context, you must re-solve captcha before retrying login.")
-            # Optionally, you could add logic here to clear cookies, re-solve captcha, and retry login as a last resort.
+            logger.error("⚠️ Login failed after all attempts. If you clear cookies or create a new context, you must re-solve captcha before retrying login.")
+            logger.info("🔴 Attempting last resort: clear cookies, re-solve captcha, and retry login...")
+            try:
+                await context.clear_cookies()
+                await asyncio.sleep(2)
+                # Re-solve captcha
+                captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts=9, solve_click_delay=6, wait_checkbox_attempts=5, wait_checkbox_delay=10, checkbox_click_attempts=3, attempt_delay=10)
+                if captcha_solved:
+                    logger.info("Captcha solved after clearing cookies. Retrying login...")
+                else:
+                    logger.warning("Captcha could not be solved after clearing cookies.")
+                # Retry login
+                login_success = await login_process(login_url, page, context, username, password)
+                if not login_success:
+                    logger.error("⚠️Login still failed after last resort attempt (clear cookies, re-solve captcha, retry login). Aborting.")
+                else:
+                    logger.info("✅ Login succeeded after last resort attempt.")
+            except Exception as e:
+                logger.error(f"⚠️ Exception during last resort login attempt: {e}")
 
 def chunkify(lst: list, n: int) -> list[list]:
     """
@@ -1264,7 +1282,7 @@ async def main(jsonInput: dict) -> list[dict]:
     normalized_search_params, limit = normalize_search_params(search_params, credentials_provided, buffer)
 
     # Build search URL using the function
-    logger.info("🏗️ Building search URL...")
+    logger.info("🏗️  Building search URL...")
     search_url = build_upwork_search_url(normalized_search_params)
     logger.debug(f"Search URL: {search_url}")
 
