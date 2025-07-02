@@ -446,10 +446,12 @@ async def login_and_solve(
         login_success = await login_process(login_url, page, context, username, password)
         # if login fails, try clearing cookies and re-solving captcha
         if not login_success:
-            logger.error("⚠️ Login failed after all attempts. If you clear cookies or create a new context, you must re-solve captcha before retrying login.")
+            logger.error("⚠️ Login failed after all attempts.")
             logger.info("🔴 Attempting last resort: clear cookies, re-solve captcha, and retry login...")
             try:
                 await context.clear_cookies()
+                page = await context.new_page()
+                await safe_goto(page, search_url, context)
                 await asyncio.sleep(2)
                 # Re-solve captcha
                 captcha_solved = await solve_captcha(queryable=page, browser_context=context, captcha_type='cloudflare', challenge_type='interstitial', solve_attempts=9, solve_click_delay=6, wait_checkbox_attempts=5, wait_checkbox_delay=10, checkbox_click_attempts=3, attempt_delay=10)
@@ -461,6 +463,9 @@ async def login_and_solve(
                 login_success = await login_process(login_url, page, context, username, password)
                 if not login_success:
                     logger.error("⚠️Login still failed after last resort attempt (clear cookies, re-solve captcha, retry login). Aborting.")
+                    # print body text
+                    body_text = await page.locator('body').inner_text()
+                    logger.debug(f"Body text: {body_text}")
                 else:
                     logger.info("✅ Login succeeded after last resort attempt.")
                     # return page and context so that new context is used for scraping
@@ -1098,19 +1103,41 @@ def playwright_cookies_to_requests(cookies):
         jar.set(cookie['name'], cookie['value'], domain=cookie['domain'], path=cookie['path'])
     return jar
 
-async def get_requests_session_from_playwright(context, page):
+async def get_requests_session_from_playwright(context, page, max_retries=3, retry_delay=1):
     """
     Extract cookies and user-agent from Playwright context and page, and build a requests.Session.
+    Retries user-agent extraction if the execution context is destroyed.
 
     :param context: Playwright BrowserContext object
     :type context: BrowserContext
     :param page: Playwright Page object
     :type page: Page
+    :param max_retries: Maximum number of retries for user-agent extraction if execution context is destroyed (default: 3)
+    :type max_retries: int
+    :param retry_delay: Delay in seconds between retries (default: 1)
+    :type retry_delay: int
     :return: requests.Session object with cookies and user-agent set
     :rtype: requests.Session
     """
     cookies = await context.cookies()
-    user_agent = await page.evaluate("() => navigator.userAgent")
+    user_agent = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            user_agent = await page.evaluate("() => navigator.userAgent")
+            break
+        except Exception as e:
+            if "Execution context was destroyed" in str(e):
+                logger.warning(f"Attempt {attempt}: Execution context destroyed while getting user-agent. Retrying...")
+                await asyncio.sleep(retry_delay)
+                if attempt == max_retries:
+                    logger.error("Failed to get user-agent after multiple retries due to navigation/context loss. Using fallback user-agent.")
+                    user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+            else:
+                logger.error(f"Unexpected error while getting user-agent: {e}. Using fallback user-agent.")
+                user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
+                break
+    if not user_agent:
+        user_agent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36"
     session = requests.Session()
     session.cookies = playwright_cookies_to_requests(cookies)
     session.headers.update({'User-Agent': user_agent})
@@ -1347,7 +1374,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # set logger
-    logger_obj = Logger(level="INFO")
+    logger_obj = Logger(level="DEBUG")
     logger = logger_obj.get_logger()
 
     # Load credentials/input data from environment variable or argument
