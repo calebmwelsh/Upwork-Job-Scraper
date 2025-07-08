@@ -1310,7 +1310,7 @@ async def main(jsonInput: dict) -> list[dict]:
     save_csv = general_params.get('save_csv', False)
 
     # Normalize search params and get limit
-    buffer = 12
+    buffer = 20
     normalized_search_params, limit = normalize_search_params(search_params, credentials_provided, buffer)
 
     # Build search URL using the function
@@ -1389,7 +1389,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # set logger
-    logger_obj = Logger(level="INFO")
+    logger_obj = Logger(level="DEBUG")
     logger = logger_obj.get_logger()
 
     # Load credentials/input data from environment variable or argument
