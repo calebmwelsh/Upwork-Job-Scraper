@@ -11,7 +11,8 @@ WORKDIR /app
 
 # Copy requirements and install
 COPY requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir --upgrade apify-shared apify
 # add this line to pull in the geoip extra
 RUN pip install --no-cache-dir "camoufox[geoip]"
 
