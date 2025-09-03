@@ -1,4 +1,4 @@
-apify==2.6.0
+apify==2.7.3
 beautifulsoup4==4.13.4
 camoufox==0.4.11
 coloredlogs==15.0.1
