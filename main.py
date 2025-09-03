@@ -1,28 +1,29 @@
 import argparse
+import ast
 import asyncio
+import concurrent.futures
+import contextlib
 import csv
 import datetime
+import io
 import json
 import logging
 import os
 import re
-import time
-import ast
 import sys
-import pandas as pd
-import requests
-import concurrent.futures
-import io
-import contextlib
+import time
 
 import js2py
+import pandas as pd
+import requests
 from bs4 import BeautifulSoup
 from camoufox import AsyncCamoufox
-from playwright.async_api import Page, BrowserContext, TimeoutError as PlaywrightTimeoutError
 from playwright._impl._errors import TargetClosedError
-from utils.logger import Logger
+from playwright.async_api import BrowserContext, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from camoufox_captcha import solve_captcha
+from utils.logger import Logger
 
 UPWORK_MAIN_CATEGORIES = {
     # Main Categories
@@ -410,6 +411,7 @@ async def login_process(
                     page = await context.new_page()
                 continue
             logger.debug(f"Login process complete.")
+            logger.debug(f"Body text: {body_text[:100]}")
             return True
         except Exception as e:
             logger.debug(f"Login attempt {attempt} failed: {e}")
