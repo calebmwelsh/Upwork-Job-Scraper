@@ -1,10 +1,7 @@
-# Use official Python image
-FROM python:3.10-slim
+# Use official Playwright image matching Playwright 1.52.0
+FROM mcr.microsoft.com/playwright/python:v1.52.0-jammy
 
-# Install system dependencies for Playwright
-RUN apt-get update && \
-    apt-get install -y wget gnupg2 curl unzip libglib2.0-0 libnss3 libgconf-2-4 libfontconfig1 libxss1 libasound2 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxcomposite1 libxdamage1 libxrandr2 libgbm1 libpango-1.0-0 libpangocairo-1.0-0 libxshmfence1 xvfb && \
-    rm -rf /var/lib/apt/lists/*
+# Base image already includes system dependencies and browsers
 
 # Set workdir
 WORKDIR /app
@@ -15,8 +12,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 # add this line to pull in the geoip extra
 RUN pip install --no-cache-dir "camoufox[geoip]"
 
-# Install Playwright browsers (Chromium, Firefox, WebKit)
-RUN python -m playwright install --with-deps
+# Ensure browsers are installed for the pinned Playwright version
+RUN python -m playwright install
 
 # Copy project files
 COPY . .
