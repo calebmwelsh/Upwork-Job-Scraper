@@ -728,7 +728,11 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
                             data['buyer_jobs_postedCount'] = int(m.group(1))
                     div = li.find('div')
                     if div:
-                        m = re.search(r'(\d+)\s+open jobs?', div.get_text())
+                        div_text = div.get_text()
+                        m = re.search(r'(\d+)\s*%\s*hire rate', div_text, re.IGNORECASE)
+                        if m:
+                            data['buyer_hire_rate_pct'] = int(m.group(1))
+                        m = re.search(r'(\d+)\s+open jobs?', div_text)
                         if m:
                             data['buyer_jobs_openCount'] = int(m.group(1))
                 # Spend and hires
@@ -905,7 +909,11 @@ def extract_job_attributes_from_html(html: str, job_id: str, credentials_provide
                                     data['buyer_jobs_postedCount'] = int(m.group(1))
                             div = li.find('div')
                             if div:
-                                m = re.search(r'(\d+)\s+open jobs?', div.get_text())
+                                div_text = div.get_text()
+                                m = re.search(r'(\d+)\s*%\s*hire rate', div_text, re.IGNORECASE)
+                                if m:
+                                    data['buyer_hire_rate_pct'] = int(m.group(1))
+                                m = re.search(r'(\d+)\s+open jobs?', div_text)
                                 if m:
                                     data['buyer_jobs_openCount'] = int(m.group(1))
                         # Spend and hires
@@ -1045,6 +1053,7 @@ EXTRACTABLE_FIELDS = [
     "buyer_stats_activeAssignmentsCount", # active assignments
     "buyer_stats_hoursCount",          # hours count
     "buyer_stats_totalJobsWithHires",  # from JSON
+    "buyer_hire_rate_pct",             # parsed from HTML 'hire rate'
     "category",                        # as 'category' from <title> tag
     "categoryGroup_name",              # as 'categoryGroup_name' (now extracted)
     "categoryGroup_urlSlug",           # from JSON
@@ -1361,7 +1370,7 @@ async def main(jsonInput: dict) -> list[dict]:
         logger.error(f"⚠️ Error getting job attributes: {e}")
         sys.exit(1)
     # Filter out jobs where Nuxt data was missing (i.e., job is None)
-    job_attributes = [job for job in job_attributes if job is not None and all(v is not None for v in job.values())]
+    # job_attributes = [job for job in job_attributes if job is not None and all(v is not None for v in job.values())]
     logger.debug(f"job_attributes after filter: {len(job_attributes)}")
     # Trim to the original limit
     logger.debug(f"limit: {limit-buffer}")
