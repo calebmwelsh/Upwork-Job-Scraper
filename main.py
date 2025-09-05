@@ -1378,6 +1378,9 @@ async def main(jsonInput: dict) -> list[dict]:
     elapsed = end_time - start_time
     logger.info("🏁 Job Fetch Complete!")
     logger.info(f"🎯 Number of results: {len(job_attributes)}")
+    # Log number of unique columns across all job records
+    num_columns = len(set().union(*(job.keys() for job in job_attributes))) if job_attributes else 0
+    logger.info(f"🧩 Number of columns: {num_columns}")
     minutes = int(elapsed // 60)
     seconds = int(elapsed % 60)
     logger.info(f"🕒 Total run time: {minutes}m {seconds}s ({elapsed:.2f} seconds)")
