@@ -195,6 +195,11 @@ class JobAttrExtractor:
                 if 'hourly_max' in extracted_data:
                     extracted_data['hourly_max'] = '0'
             
+            # Ensure all target fields are present with default values if missing
+            for field in self.target_fields:
+                if field not in extracted_data:
+                    extracted_data[field] = ""
+            
             return extracted_data
             
         except Exception as e:
