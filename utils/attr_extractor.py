@@ -13,7 +13,10 @@ from typing import Any, Dict, Optional
 from bs4 import BeautifulSoup
 
 # Configure logging
-logger = logging.getLogger(__name__)
+from .logger import Logger
+
+logger_obj = Logger(level="DEBUG")
+logger = logger_obj.get_logger()
 
 class JobAttrExtractor:
     """Extract job data from Upwork HTML content"""
@@ -95,12 +98,10 @@ class JobAttrExtractor:
             if job_id:
                 extracted_data['job_id'] = job_id
             
-            
             # Method 1: Extract from JSON in script tags
             json_data = self._extract_json_from_scripts(soup)
             if json_data:
-                json_extracted = self._extract_from_json(json_data)
-                extracted_data.update(json_extracted)
+                extracted_data.update(self._extract_from_json(json_data))
             
             # Method 2: Extract from HTML attributes and text content
             html_data = self._extract_from_html_elements(soup)
@@ -130,16 +131,19 @@ class JobAttrExtractor:
                         continue
                     # Don't resolve fields that were correctly extracted from targeted blocks
                     if key in ['client_hires', 'buyer_stats_hoursCount', 'client_reviews', 'client_rating', 'buyer_stats_totalJobsWithHires']:
-                        logger.debug(f"Skipping Nuxt resolution for {key} - targeted block value: {value}")
                         continue
                     if value != "Not found":
                         resolved_value = self._resolve_nuxt_index(value, nuxt_lookup)
                         if resolved_value != value:
                             extracted_data[key] = resolved_value
-                            logger.info(f"Resolved {key} from {value} to {resolved_value}")
             
-            # Method 7: Enhanced search with Nuxt lookup
             self._extract_missing_fields(html_content, extracted_data, nuxt_lookup)
+            
+            # Method 7.5: Targeted block extraction AFTER all Nuxt resolution is complete
+            self._extract_targeted_block(html_content, extracted_data)
+            
+            # Method 7.6: Clean up any remaining random values for protected fields
+            self._cleanup_protected_fields(extracted_data)
             
             # Method 8: Calculate hire rate percentage from resolved data
             if 'buyer_stats_totalJobsWithHires' in extracted_data and 'buyer_jobs_postedCount' in extracted_data:
@@ -161,9 +165,8 @@ class JobAttrExtractor:
                                 rate_for_log = round((jobs_with_hires / total_jobs_posted) * 100)
                                 # Clamp any rounding anomalies
                                 extracted_data['buyer_hire_rate_pct'] = min(100, max(0, rate_for_log))
-                            logger.info(f"Calculated buyer_hire_rate_pct: {rate_for_log}% (from {jobs_with_hires}/{total_jobs_posted} jobs)")
                     else:
-                        logger.debug(f"Skipping hire rate calculation - non-numeric values: '{jobs_with_hires_str}', '{total_jobs_posted_str}'")
+                        pass
                 except (ValueError, TypeError) as e:
                     logger.warning(f"Could not calculate hire rate: {e}")
 
@@ -191,7 +194,6 @@ class JobAttrExtractor:
                     extracted_data['hourly_min'] = '0'
                 if 'hourly_max' in extracted_data:
                     extracted_data['hourly_max'] = '0'
-            
             
             return extracted_data
             
@@ -254,7 +256,6 @@ class JobAttrExtractor:
                     for target_field in self.target_fields:
                         if key == target_field or current_path.endswith(f".{target_field}"):
                             extracted[target_field] = value
-                            logger.info(f"Found {target_field} in JSON: {value}")
                     
                     # Recursively search nested dictionaries
                     if isinstance(value, dict):
@@ -284,7 +285,6 @@ class JobAttrExtractor:
         try:
             # Parse the JSON data
             nuxt_data = json.loads(match.group(1))
-            logger.info("Successfully parsed __NUXT_DATA__")
             return nuxt_data
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse __NUXT_DATA__ JSON: {e}")
@@ -303,9 +303,8 @@ class JobAttrExtractor:
         for i, value in enumerate(nuxt_data):
             lookup[i] = value
             if i < 200:  # Only log first 200 entries to avoid spam
-                logger.debug(f"Index {i}: {value}")
+                pass
         
-        logger.info(f"Built Nuxt lookup with {len(lookup)} entries")
         return lookup
 
     def _resolve_nuxt_index(self, value, nuxt_lookup):
@@ -326,7 +325,6 @@ class JobAttrExtractor:
                 if isinstance(resolved, (dict, list)):
                     # This is a complex object, don't resolve
                     return value
-                logger.debug(f"Resolved index {index} to: {resolved}")
                 return resolved
         return value
     
@@ -413,15 +411,26 @@ class JobAttrExtractor:
         description_selectors = [
             'div[data-test="job-description"]',
             'div[data-test="description"]',
+            'div[data-test="Description"]',  # Handle uppercase D
             '.job-description',
             '.description',
-            'section[data-test="description"]'
+            'section[data-test="description"]',
+            'section[data-test="Description"]'  # Handle uppercase D
         ]
         
         for selector in description_selectors:
             desc_element = soup.select_one(selector)
             if desc_element:
-                desc_text = desc_element.get_text().strip()
+                # For the specific Description structure, look for the p tag inside
+                if 'data-test="Description"' in selector:
+                    p_tag = desc_element.find('p')
+                    if p_tag:
+                        desc_text = p_tag.get_text().strip()
+                    else:
+                        desc_text = desc_element.get_text().strip()
+                else:
+                    desc_text = desc_element.get_text().strip()
+                
                 # If the element is actually just the job type token, use it for type and skip as description
                 lowered = desc_text.lower()
                 if lowered in ('hourly', 'fixed', 'fixed-price', 'fixed price'):
@@ -444,8 +453,16 @@ class JobAttrExtractor:
             if text_content:
                 if 'job-title' in data_test or 'title' in data_test:
                     extracted['title'] = text_content
-                elif 'job-description' in data_test or 'description' in data_test:
-                    extracted['description'] = text_content
+                elif 'job-description' in data_test or 'description' in data_test or 'Description' in data_test:
+                    # For Description with uppercase D, look for p tag inside
+                    if data_test == 'Description':
+                        p_tag = element.find('p')
+                        if p_tag:
+                            extracted['description'] = p_tag.get_text().strip()
+                        else:
+                            extracted['description'] = text_content
+                    else:
+                        extracted['description'] = text_content
                 elif 'budget' in data_test:
                     # Try to extract budget information
                     if 'fixed' in text_content.lower():
@@ -483,7 +500,6 @@ class JobAttrExtractor:
                     # Extract hire rate: "40% hire rate, 5 open jobs"
                     hire_rate_match = re.search(r'(\d+)% hire rate', text_content)
                     if hire_rate_match:
-                        logger.info(f"Found buyer_hire_rate_pct from DOM: {hire_rate_match.group(1)}%")
                         extracted['buyer_hire_rate_pct'] = hire_rate_match.group(1)
                 elif data_qa == 'client-location':
                     # Extract location: "United States" and "Davenport"
@@ -929,9 +945,6 @@ class JobAttrExtractor:
             'lastBuyerActivity': 'lastBuyerActivity'
         }
         
-        # Track which fields have been set to prevent multiple overwrites
-        fields_set = set()
-        
         # Extract Nuxt data using patterns
         for pattern in nuxt_patterns:
             matches = re.findall(pattern, html_content, re.IGNORECASE)
@@ -939,37 +952,46 @@ class JobAttrExtractor:
                 # Find which field this pattern corresponds to
                 for nuxt_field, target_field in nuxt_field_mapping.items():
                     if nuxt_field in pattern:
-                        logger.info(f"Processing pattern for {nuxt_field} -> {target_field}: {matches[0]}")
                         # Only set if field is truly missing or has invalid value
-                        current_value = extracted.get(target_field)
-                        should_set = (target_field not in extracted or 
-                                    current_value == "Not found" or 
-                                    current_value is None or 
-                                    current_value == "")
+                        # For numeric fields, also check if current value is not a valid number
+                        should_set_value = (
+                            target_field not in extracted or 
+                            extracted[target_field] == "Not found" or 
+                            extracted[target_field] is None or 
+                            extracted[target_field] == ""
+                        )
                         
+                        # For specific numeric fields, also check if current value is not a valid number
+                        if target_field in ['buyer_stats_hoursCount', 'buyer_stats_totalJobsWithHires', 'client_hires', 'client_reviews', 'client_rating', 'buyer_hire_rate_pct']:
+                            if target_field in extracted and extracted[target_field] != "Not found" and extracted[target_field] is not None and extracted[target_field] != "":
+                                try:
+                                    # If current value is a valid number, don't overwrite it
+                                    float(extracted[target_field])
+                                    should_set_value = False
+                                except (ValueError, TypeError):
+                                    # Current value is not a valid number, allow overwriting
+                                    should_set_value = True
                         
-                        if should_set and target_field not in fields_set:
+                        if should_set_value:
                             value = matches[0].strip()
                             if value and self._is_valid_value(value):
                                 # Convert boolean strings to actual booleans
                                 if value.lower() in ['true', 'false']:
                                     extracted[target_field] = value.lower() == 'true'
-                                    fields_set.add(target_field)
                                 else:
                                     # Normalize client_total_spent if needed
                                     if target_field == 'client_total_spent':
                                         extracted[target_field] = self._normalize_client_total_spent(value)
-                                        fields_set.add(target_field)
-                                    # Don't overwrite DOM-extracted hire rate with random Nuxt values
-                                    elif target_field == 'buyer_hire_rate_pct' and 'buyer_hire_rate_pct' in extracted:
-                                        logger.debug(f"Skipping Nuxt hire rate '{value}' - DOM value already present: {extracted['buyer_hire_rate_pct']}")
-                                    # Don't overwrite targeted block extraction with random Nuxt values
-                                    elif target_field in ['client_hires', 'buyer_stats_hoursCount', 'client_reviews', 'client_rating', 'buyer_stats_totalJobsWithHires'] and target_field in extracted:
-                                        logger.debug(f"Skipping Nuxt {target_field} '{value}' - targeted block value already present: {extracted[target_field]}")
                                     else:
                                         extracted[target_field] = value
-                                        fields_set.add(target_field)
-                                logger.info(f"Found {target_field} from Nuxt data: {value}")
+                        else:
+                            # Field already has a value - check if we should skip overwriting it
+                            if target_field == 'buyer_hire_rate_pct':
+                                pass  # Skip hire rate from Nuxt
+                            elif target_field in ['client_hires', 'buyer_stats_hoursCount', 'client_reviews', 'client_rating', 'buyer_stats_totalJobsWithHires']:
+                                pass  # Skip targeted block fields from Nuxt
+                            else:
+                                pass
                         break
         
         # Search for location data via Nuxt index mapping present in HTML
@@ -982,18 +1004,14 @@ class JobAttrExtractor:
                 if nuxt_lookup:
                     if off_idx in nuxt_lookup:
                         extracted['buyer_location_offsetFromUtcMillis'] = nuxt_lookup[off_idx]
-                        logger.info(f"Resolved buyer_location_offsetFromUtcMillis from Nuxt index {off_idx}: {nuxt_lookup[off_idx]}")
                     if tz_idx in nuxt_lookup:
                         extracted['buyer_location_countryTimezone'] = nuxt_lookup[tz_idx]
-                        logger.info(f"Resolved buyer_location_countryTimezone from Nuxt index {tz_idx}: {nuxt_lookup[tz_idx]}")
                     if city_idx in nuxt_lookup:
                         city_candidate = nuxt_lookup[city_idx]
                         if not (isinstance(city_candidate, str) and re.match(r'^\s*\d{1,2}:\d{2}(\s*[AP]M)?\s*$', city_candidate, re.IGNORECASE)):
                             extracted['buyer_location_city'] = city_candidate
-                            logger.info(f"Resolved buyer_location_city from Nuxt index {city_idx}: {city_candidate}")
                     if country_idx in nuxt_lookup:
                         extracted['client_country'] = nuxt_lookup[country_idx]
-                        logger.info(f"Resolved client_country from Nuxt index {country_idx}: {nuxt_lookup[country_idx]}")
             except Exception:
                 pass
 
@@ -1022,15 +1040,12 @@ class JobAttrExtractor:
             # Convert string indices to integers
             industry_idx = int(industry_idx)
             size_idx = int(size_idx)
-            logger.info(f"Found industry pattern: industry_idx={industry_idx}, size_idx={size_idx}")
             # Always resolve these indices to actual values if we have Nuxt lookup
             if nuxt_lookup and industry_idx in nuxt_lookup:
                 extracted['client_industry'] = nuxt_lookup[industry_idx]
-                logger.info(f"Found client_industry from Nuxt industry data: {nuxt_lookup[industry_idx]}")
             if nuxt_lookup and size_idx in nuxt_lookup:
                 if 'client_company_size' not in extracted or extracted['client_company_size'] == "Not found":
                     extracted['client_company_size'] = nuxt_lookup[size_idx]
-                    logger.info(f"Found client_company_size from Nuxt industry data: {nuxt_lookup[size_idx]}")
         
         # Pattern: "currencyCode":91},0,"USD"
         currency_pattern = r'"currencyCode":(\d+)\},[^,]*,"([^"]+)"'
@@ -1040,11 +1055,9 @@ class JobAttrExtractor:
             # Always resolve the currency index to actual value if we have Nuxt lookup
             if nuxt_lookup and currency_idx in nuxt_lookup:
                 extracted['currency'] = nuxt_lookup[currency_idx]
-                logger.info(f"Found currency from Nuxt currency data: {nuxt_lookup[currency_idx]}")
             else:
                 # Fallback to the literal value found after the pattern
                 extracted['currency'] = currency_value
-                logger.info(f"Found currency from pattern: {currency_value}")
         
         # Look for category and category group data
         # Pattern: {"name":84,"urlSlug":85},"Scripts & Utilities","scripts-utilities"
@@ -1056,9 +1069,6 @@ class JobAttrExtractor:
             extracted['category'] = category_name
             extracted['category_name'] = category_name
             extracted['category_urlSlug'] = category_url_slug
-            logger.info(f"Found category from Nuxt category data: {category_name}")
-            logger.info(f"Found category_name from Nuxt category data: {category_name}")
-            logger.info(f"Found category_urlSlug from Nuxt category data: {category_url_slug}")
         
         # Look for category group data
         # Pattern: {"name":87,"urlSlug":88},"Web, Mobile & Software Dev","web-mobile-software-dev"
@@ -1070,50 +1080,9 @@ class JobAttrExtractor:
                 name_id, url_slug_id, category_group_name, category_group_url_slug = category_group_matches[1]
                 if 'categoryGroup_name' not in extracted or extracted['categoryGroup_name'] == "Not found":
                     extracted['categoryGroup_name'] = category_group_name
-                    logger.info(f"Found categoryGroup_name from Nuxt category group data: {category_group_name}")
                 if 'categoryGroup_urlSlug' not in extracted or extracted['categoryGroup_urlSlug'] == "Not found":
                     extracted['categoryGroup_urlSlug'] = category_group_url_slug
-                    logger.info(f"Found categoryGroup_urlSlug from Nuxt category group data: {category_group_url_slug}")
 
-        # Targeted extraction for buyer_stats_hoursCount from Nuxt mapping with trailing values
-        # Example: {"totalAssignments":130,"activeAssignmentsCount":102,"hoursCount":131,"feedbackCount":132,"score":133,"totalJobsWithHires":134,"totalCharges":135},108,3582.33,73,4.35,92,
-        hours_block_pattern = (
-            r'\{"totalAssignments":(\d+),"activeAssignmentsCount":(\d+),"hoursCount":(\d+),"feedbackCount":(\d+),"score":(\d+),"totalJobsWithHires":(\d+),"totalCharges":(\d+)\}'
-            r'\s*,\s*(\d+)\s*,\s*([\d\.]+)\s*,\s*(\d+)\s*,\s*([\d\.]+)\s*,\s*(\d+)'  # captures: totalAssignmentsVal, hoursVal, feedbackVal, scoreVal, totalJobsWithHiresVal
-        )
-        hours_block_match = re.search(hours_block_pattern, html_content)
-        if hours_block_match:
-            try:
-                total_assignments_str = hours_block_match.group(8)
-                hours_val_str = hours_block_match.group(9)  # The 2nd trailing value corresponds to hours
-                feedback_count_str = hours_block_match.group(10)
-                score_str = hours_block_match.group(11)
-                total_jobs_with_hires_str = hours_block_match.group(12)
-
-                # Normalize and assign
-                # client_hires: use totalAssignments as total hires
-                extracted['client_hires'] = str(int(float(total_assignments_str)))
-
-                hours_val_num = int(float(hours_val_str))
-                extracted['buyer_stats_hoursCount'] = str(hours_val_num)
-
-                extracted['client_reviews'] = str(int(float(feedback_count_str)))
-
-                # Keep rating with potential decimal
-                try:
-                    extracted['client_rating'] = str(float(score_str))
-                except Exception:
-                    extracted['client_rating'] = score_str
-
-                extracted['buyer_stats_totalJobsWithHires'] = str(int(float(total_jobs_with_hires_str)))
-
-                logger.info(
-                    f"TARGETED BLOCK EXTRACTION: client_hires={total_assignments_str}, "
-                    f"buyer_stats_hoursCount={hours_val_str}, client_reviews={feedback_count_str}, "
-                    f"client_rating={score_str}, buyer_stats_totalJobsWithHires={total_jobs_with_hires_str}"
-                )
-            except Exception:
-                pass
         
         for pattern in script_patterns:
             matches = re.findall(pattern, html_content, re.DOTALL)
@@ -1122,7 +1091,6 @@ class JobAttrExtractor:
                     json_data = json.loads(match)
                     json_extracted = self._extract_from_json(json_data)
                     extracted.update(json_extracted)
-                    logger.info(f"Extracted {len(json_extracted)} fields from JSON")
                 except json.JSONDecodeError:
                     continue
         
@@ -1133,7 +1101,6 @@ class JobAttrExtractor:
                     resolved_value = self._resolve_nuxt_index(value, nuxt_lookup)
                     if resolved_value != value:
                         extracted[key] = resolved_value
-                        logger.info(f"Resolved {key} from {value} to {resolved_value}")
     
     def _is_valid_value(self, value: str) -> bool:
         """Check if extracted value is valid and not noise"""
@@ -1153,6 +1120,99 @@ class JobAttrExtractor:
             return False
         
         return True
+
+    def _extract_targeted_block(self, html_content: str, extracted: Dict[str, Any]):
+        """Extract values from targeted Nuxt mapping block - runs AFTER all Nuxt resolution"""
+        # Targeted extraction for buyer_stats_hoursCount from Nuxt mapping with trailing values
+        # Example: {"totalAssignments":130,"activeAssignmentsCount":102,"hoursCount":131,"feedbackCount":132,"score":133,"totalJobsWithHires":134,"totalCharges":135},108,3582.33,73,4.35,92,
+        hours_block_pattern = (
+            r'\{"totalAssignments":(\d+),"activeAssignmentsCount":(\d+),"hoursCount":(\d+),"feedbackCount":(\d+),"score":(\d+),"totalJobsWithHires":(\d+),"totalCharges":(\d+)\}'
+            r'\s*,\s*(\d+)\s*,\s*([\d\.]+)\s*,\s*(\d+)\s*,\s*([\d\.]+)\s*,\s*(\d+)'  # captures: totalAssignmentsVal, hoursVal, feedbackVal, scoreVal, totalJobsWithHiresVal
+        )
+        hours_block_match = re.search(hours_block_pattern, html_content)
+        if hours_block_match:
+            try:
+                total_assignments_str = hours_block_match.group(8)
+                hours_val_str = hours_block_match.group(9)  # The 2nd trailing value corresponds to hours
+                feedback_count_str = hours_block_match.group(10)
+                score_str = hours_block_match.group(11)
+                total_jobs_with_hires_str = hours_block_match.group(12)
+
+                # Normalize and assign - these values take precedence over any previous extraction
+                # client_hires: use totalAssignments as total hires
+                extracted['client_hires'] = str(int(float(total_assignments_str)))
+
+                hours_val_num = int(float(hours_val_str))
+                extracted['buyer_stats_hoursCount'] = str(hours_val_num)
+
+                extracted['client_reviews'] = str(int(float(feedback_count_str)))
+
+                # Keep rating with potential decimal
+                try:
+                    extracted['client_rating'] = str(float(score_str))
+                except Exception:
+                    extracted['client_rating'] = score_str
+
+                extracted['buyer_stats_totalJobsWithHires'] = str(int(float(total_jobs_with_hires_str)))
+
+            except Exception:
+                pass
+
+    def _cleanup_protected_fields(self, extracted: Dict[str, Any]):
+        """Clean up random values for fields that should only have specific valid values"""
+        protected_fields = {
+            'buyer_stats_hoursCount': self._is_valid_hours_count,
+            'client_hires': self._is_valid_hires_count,
+            'buyer_stats_totalJobsWithHires': self._is_valid_jobs_with_hires,
+            'client_reviews': self._is_valid_reviews_count,
+            'client_rating': self._is_valid_rating
+        }
+        
+        for field, validator in protected_fields.items():
+            if field in extracted:
+                value = extracted[field]
+                if not validator(value):
+                    extracted[field] = "0"  # Set to 0 instead of random values
+
+    def _is_valid_hours_count(self, value: str) -> bool:
+        """Check if value is a valid hours count (numeric, reasonable range)"""
+        try:
+            num = float(str(value))
+            return 0 <= num <= 1000000  # Reasonable range for hours
+        except (ValueError, TypeError):
+            return False
+
+    def _is_valid_hires_count(self, value: str) -> bool:
+        """Check if value is a valid hires count (numeric, reasonable range)"""
+        try:
+            num = int(float(str(value)))
+            return 0 <= num <= 10000  # Reasonable range for hires
+        except (ValueError, TypeError):
+            return False
+
+    def _is_valid_jobs_with_hires(self, value: str) -> bool:
+        """Check if value is a valid jobs with hires count (numeric, reasonable range)"""
+        try:
+            num = int(float(str(value)))
+            return 0 <= num <= 10000  # Reasonable range for jobs
+        except (ValueError, TypeError):
+            return False
+
+    def _is_valid_reviews_count(self, value: str) -> bool:
+        """Check if value is a valid reviews count (numeric, reasonable range)"""
+        try:
+            num = int(float(str(value)))
+            return 0 <= num <= 10000  # Reasonable range for reviews
+        except (ValueError, TypeError):
+            return False
+
+    def _is_valid_rating(self, value: str) -> bool:
+        """Check if value is a valid rating (numeric between 0-5)"""
+        try:
+            num = float(str(value))
+            return 0 <= num <= 5.0  # Valid rating range
+        except (ValueError, TypeError):
+            return False
 
     def _normalize_client_total_spent(self, value: str) -> str:
         """Normalize client_total_spent values like '19K' to '19000'.

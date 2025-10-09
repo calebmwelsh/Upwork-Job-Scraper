@@ -12,6 +12,7 @@ import os
 import re
 import sys
 import time
+from collections import deque
 
 import js2py
 import pandas as pd
@@ -23,6 +24,7 @@ from playwright.async_api import BrowserContext, Page
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
 from camoufox_captcha import solve_captcha
+from utils.attr_extractor import extract_job_attributes
 from utils.logger import Logger
 
 UPWORK_MAIN_CATEGORIES = {
@@ -491,629 +493,6 @@ async def login_and_solve(
                 logger.error(f"⚠️ Exception during last resort login attempt: {e}")
     return page, context
 
-def extract_nuxt_json_using_js2py(html: str) -> dict | None:
-    """
-    Extract and evaluate the window.__NUXT__ script content from HTML using js2py.
-
-    :param html: HTML content as a string
-    :type html: str
-    :return: Parsed __NUXT__ JSON as a dict, or None if not found/parsable
-    :rtype: dict or None
-    """
-    match = re.search(r'<script>window\.__NUXT__=([\s\S]*?)</script>', html)
-    if not match:
-        return None
-    js_code = match.group(1).strip().rstrip(';')
-    js_code = "var nuxt = " + js_code
-    try:
-        # Capture only js2py stdout, suppressing PyJs_LONG_1_ output
-        with contextlib.redirect_stdout(io.StringIO()):
-            context = js2py.EvalJs()
-            context.execute(js_code)
-        return context.nuxt.to_dict()
-    except Exception as e:
-        logger.debug(f"Error evaluating window.__NUXT__ with js2py: {e}")
-        return None
-
-def extract_job_attributes_from_html(html: str, job_id: str, credentials_provided: bool = True) -> dict:
-    """
-    Extract job attributes from Upwork job HTML (using JSON and HTML fallback).
-
-    :param html: HTML content of the job page
-    :type html: str
-    :param job_id: Job ID string
-    :type job_id: str
-    :param credentials_provided: Whether credentials are provided (affects restricted fields)
-    :type credentials_provided: bool
-    :return: Dictionary of extracted job attributes, keyed by job_id
-    :rtype: dict
-    """
-    data = {}
-
-    # 1. Extract JSON from full HTML
-    nuxt_data = extract_nuxt_json_using_js2py(html)
-    if not nuxt_data:
-        return {job_id: None}
-    nuxt_job = None
-    nuxt_buyer = None
-    if nuxt_data:
-        try:
-            nuxt_job = nuxt_data['state']['jobDetails']['job']
-            nuxt_buyer = nuxt_data['state']['jobDetails']['buyer']
-            # Extract categoryGroup/name
-            if 'categoryGroup' in nuxt_job and 'name' in nuxt_job['categoryGroup']:
-                data['categoryGroup_name'] = nuxt_job['categoryGroup']['name']
-            # Extract clientActivity/lastBuyerActivity
-            if 'clientActivity' in nuxt_job and 'lastBuyerActivity' in nuxt_job['clientActivity']:
-                data['lastBuyerActivity'] = nuxt_job['clientActivity']['lastBuyerActivity']
-            # Extract questions
-            if 'questions' in nuxt_job:
-                data['questions'] = nuxt_job['questions']
-            # Extract qualifications
-            if 'qualifications' in nuxt_job:
-                data['qualifications'] = nuxt_job['qualifications']
-        except Exception as e:
-            nuxt_job = None
-            nuxt_buyer = None
-
-    if nuxt_job:
-        data['title'] = nuxt_job.get('title')
-        data['description'] = nuxt_job.get('description')
-        # Budget (fixed or hourly)
-        if 'budget' in nuxt_job and 'amount' in nuxt_job['budget']:
-            data['fixed_budget_amount'] = nuxt_job['budget']['amount']
-        if 'extendedBudgetInfo' in nuxt_job:
-            data['hourly_min'] = nuxt_job['extendedBudgetInfo'].get('hourlyBudgetMin')
-            data['hourly_max'] = nuxt_job['extendedBudgetInfo'].get('hourlyBudgetMax')
-        # Duration
-        if 'engagementDuration' in nuxt_job:
-            data['duration'] = nuxt_job['engagementDuration'].get('label')
-        # Level
-        if 'contractorTier' in nuxt_job:
-            tier = nuxt_job['contractorTier']
-            if tier == 1:
-                data['level'] = 'ENTRY_LEVEL'
-            elif tier == 2:
-                data['level'] = 'INTERMEDIATE'
-            elif tier == 3:
-                data['level'] = 'EXPERT'
-            else:
-                data['level'] = tier
-            
-        # Type
-        if 'type' in nuxt_job:
-            data['type'] = 'Hourly' if nuxt_job['type'] == 2 else 'Fixed-price' if nuxt_job['type'] == 1 else None
-        # Skills (ontologySkills, additionalSkills)
-        skills = []
-        if 'sands' in nuxt_data['state']['jobDetails']:
-            sands = nuxt_data['state']['jobDetails']['sands']
-            if 'ontologySkills' in sands:
-                for group in sands['ontologySkills']:
-                    if 'children' in group:
-                        for child in group['children']:
-                            if 'name' in child:
-                                skills.append(child['name'])
-            if 'additionalSkills' in sands:
-                for skill in sands['additionalSkills']:
-                    if 'name' in skill:
-                        skills.append(skill['name'])
-        if skills:
-            data['skills'] = skills
-        # Activity on this job
-        if 'clientActivity' in nuxt_job:
-            ca = nuxt_job['clientActivity']
-            data['clientActivity_totalHired'] = ca.get('totalHired')
-            data['clientActivity_totalInvitedToInterview'] = ca.get('totalInvitedToInterview')
-            data['applicants'] = ca.get('totalApplicants')
-            data['clientActivity_invitationsSent'] = ca.get('invitationsSent')
-            data['clientActivity_unansweredInvites'] = ca.get('unansweredInvites')
-        # if credentials are provided, extract fields
-        if credentials_provided:
-            # Connects required
-            if 'connects' in nuxt_data['state']['jobDetails']:
-                connects = nuxt_data['state']['jobDetails']['connects']
-                if connects:
-                    if 'requiredConnects' in connects:
-                        data['connects_required'] = connects['requiredConnects']
-        # Payment method verified
-        if nuxt_buyer and 'isPaymentMethodVerified' in nuxt_buyer:
-            data['payment_verified'] = nuxt_buyer['isPaymentMethodVerified']
-        # Extract contractDate from buyer.company
-        if nuxt_buyer and 'company' in nuxt_buyer and 'contractDate' in nuxt_buyer['company']:
-            data['buyer_company_contractDate'] = nuxt_buyer['company']['contractDate']
-        # Extract present fields from nuxt_job and nuxt_buyer
-        # buyer/location/countryTimezone
-        if nuxt_buyer and 'location' in nuxt_buyer and 'countryTimezone' in nuxt_buyer['location']:
-            data['buyer_location_countryTimezone'] = nuxt_buyer['location']['countryTimezone']
-        # buyer/location/offsetFromUtcMillis
-        if nuxt_buyer and 'location' in nuxt_buyer and 'offsetFromUtcMillis' in nuxt_buyer['location']:
-            data['buyer_location_offsetFromUtcMillis'] = nuxt_buyer['location']['offsetFromUtcMillis']
-        # buyer/stats/totalJobsWithHires
-        if nuxt_buyer and 'stats' in nuxt_buyer and 'totalJobsWithHires' in nuxt_buyer['stats']:
-            data['buyer_stats_totalJobsWithHires'] = nuxt_buyer['stats']['totalJobsWithHires']
-        # category/name
-        if 'category' in nuxt_job and 'name' in nuxt_job['category']:
-            data['category_name'] = nuxt_job['category']['name']
-        # category/urlSlug
-        if 'category' in nuxt_job and 'urlSlug' in nuxt_job['category']:
-            data['category_urlSlug'] = nuxt_job['category']['urlSlug']
-        # categoryGroup/urlSlug
-        if 'categoryGroup' in nuxt_job and 'urlSlug' in nuxt_job['categoryGroup']:
-            data['categoryGroup_urlSlug'] = nuxt_job['categoryGroup']['urlSlug']
-        # contractorTier
-        if 'contractorTier' in nuxt_job:
-            data['contractorTier'] = nuxt_job['contractorTier']
-        # currency
-        if 'budget' in nuxt_job and 'currencyCode' in nuxt_job['budget']:
-            data['currency'] = nuxt_job['budget']['currencyCode']
-        # enterpriseJob
-        if nuxt_buyer and 'isEnterprise' in nuxt_buyer:
-            data['enterpriseJob'] = nuxt_buyer['isEnterprise']
-        # isContractToHire
-        if 'isContractToHire' in nuxt_job:
-            data['isContractToHire'] = nuxt_job['isContractToHire']
-        # numberOfPositionsToHire
-        if 'numberOfPositionsToHire' in nuxt_job:
-            data['numberOfPositionsToHire'] = nuxt_job['numberOfPositionsToHire']
-        # premium
-        if 'isPremium' in nuxt_job:
-            data['premium'] = nuxt_job['isPremium']
-        # Category group name
-        if 'categoryGroup' in nuxt_job and 'name' in nuxt_job['categoryGroup']:
-            data['categoryGroup_name'] = nuxt_job['categoryGroup']['name']
-        # Last buyer activity
-        if 'clientActivity' in nuxt_job and 'lastBuyerActivity' in nuxt_job['clientActivity']:
-            data['lastBuyerActivity'] = nuxt_job['clientActivity']['lastBuyerActivity']
-        # Qualifications
-        if 'qualifications' in nuxt_job:
-            data['qualifications'] = nuxt_job['qualifications']
-        # Questions
-        if 'questions' in nuxt_job:
-            data['questions'] = nuxt_job['questions']
-        # ts_create, ts_publish, ts_sourcing
-        if 'createdOn' in nuxt_job:
-            data['ts_create'] = nuxt_job['createdOn']
-        if 'publishTime' in nuxt_job:
-            data['ts_publish'] = nuxt_job['publishTime']
-
-    # 2. Extract job-details-content div for HTML fallback
-    soup = BeautifulSoup(html, 'html.parser')
-    # Extract category from <title> tag (after the last dash)
-    if not data.get('category'):
-        title_tag = soup.find('title')
-        if title_tag:
-            title_text = title_tag.get_text(strip=True)
-            if ' - ' in title_text:
-                # Take the part after the last dash
-                category = title_text.split(' - ')[-1].strip()
-                data['category'] = category
-    # Detect phone verification from HTML
-    if not data.get('phone_verified'):
-        phone_verified = False
-        # Look for the specific structure: div.payment-verified + strong with 'Phone number verified'
-        for parent in soup.find_all('div', class_='d-flex'):
-            icon = parent.find('div', class_='payment-verified')
-            strong = parent.find('strong')
-            if icon and strong and 'Phone number verified' in strong.get_text(strip=True):
-                phone_verified = True
-                break
-        data['phone_verified'] = phone_verified
-
-    job_details_div = soup.find('div', class_='job-details-content')
-
-    if job_details_div:
-        # --- Enhanced extraction from <ul class="features ..."> for client/job info --- #
-        features_ul = soup.find('ul', class_='features')
-        if features_ul:
-            for li in features_ul.find_all('li', recursive=False):
-                data_qa = li.get('data-qa', '')
-                # Client location
-                if data_qa == 'client-location':
-                    strong = li.find('strong')
-                    if strong:
-                        data['client_country'] = strong.get_text(strip=True)
-                    div = li.find('div')
-                    if div:
-                        spans = div.find_all('span', class_='nowrap')
-                        if len(spans) > 0:
-                            data['buyer_location_city'] = spans[0].get_text(strip=True)
-                        if len(spans) > 1:
-                            data['buyer_location_localTime'] = spans[1].get_text(strip=True)
-                # Job posting stats
-                elif data_qa == 'client-job-posting-stats':
-                    strong = li.find('strong')
-                    if strong:
-                        m = re.search(r'(\d+)\s+jobs posted', strong.get_text())
-                        if m:
-                            data['buyer_jobs_postedCount'] = int(m.group(1))
-                    div = li.find('div')
-                    if div:
-                        div_text = div.get_text()
-                        m = re.search(r'(\d+)\s*%\s*hire rate', div_text, re.IGNORECASE)
-                        if m:
-                            data['buyer_hire_rate_pct'] = int(m.group(1))
-                        m = re.search(r'(\d+)\s+open jobs?', div_text)
-                        if m:
-                            data['buyer_jobs_openCount'] = int(m.group(1))
-                # Spend and hires
-                elif li.find('strong', {'data-qa': 'client-spend'}):
-                    spend_strong = li.find('strong', {'data-qa': 'client-spend'})
-                    if spend_strong:
-                        m = re.search(r'\$([\dKk,\.]+)', spend_strong.get_text())
-                        if m:
-                            val = m.group(1).replace(',', '')
-                            if 'K' in val or 'k' in val:
-                                data['client_total_spent'] = float(val.replace('K','').replace('k','')) * 1000
-                            else:
-                                data['client_total_spent'] = float(val)
-                    hires_div = li.find('div', {'data-qa': 'client-hires'})
-                    if hires_div:
-                        hires_text = hires_div.get_text()
-                        m = re.search(r'(\d+)\s+hires', hires_text)
-                        if m:
-                            data['client_hires'] = int(m.group(1))
-                            data['clientActivity_totalHired'] = int(m.group(1))
-                        m = re.search(r'(\d+)\s+active', hires_text)
-                        if m:
-                            data['buyer_stats_activeAssignmentsCount'] = int(m.group(1))
-                # Hourly rate and hours
-                elif li.find('strong', {'data-qa': 'client-hourly-rate'}):
-                    rate_strong = li.find('strong', {'data-qa': 'client-hourly-rate'})
-                    if rate_strong:
-                        m = re.search(r'\$([\d\.]+)', rate_strong.get_text())
-                        if m:
-                            data['buyer_avgHourlyJobsRate_amount'] = float(m.group(1))
-                    hours_div = li.find('div', {'data-qa': 'client-hours'})
-                    if hours_div:
-                        m = re.search(r'(\d+)', hours_div.get_text().replace(',', ''))
-                        if m:
-                            data['buyer_stats_hoursCount'] = int(m.group(1))
-                # Company profile
-                elif data_qa == 'client-company-profile':
-                    industry_strong = li.find('strong', {'data-qa': 'client-company-profile-industry'})
-                    if industry_strong:
-                        data['client_industry'] = industry_strong.get_text(strip=True)
-                    size_div = li.find('div', {'data-qa': 'client-company-profile-size'})
-                    if size_div:
-                        data['client_company_size'] = size_div.get_text(strip=True)
-
-        # ------------------ HTML fallback for nuxt data ------------------ #
-
-        # Title
-        if not data.get('title'):
-            title_tag = job_details_div.find('h4')
-            if title_tag:
-                data['title'] = title_tag.get_text(strip=True)
-        # Description
-        if not data.get('description'):
-            desc_div = job_details_div.find('div', {'data-test': 'Description'})
-            if desc_div:
-                desc_p = desc_div.find('p')
-                if desc_p:
-                    data['description'] = desc_p.get_text(separator='\n', strip=True)
-
-        # Features (Type, Duration, Level, Hourly min/max, Fixed budget)
-        features = job_details_div.find('ul', class_='features')
-        hourly_vals = []
-        if features:
-            for item in features.find_all('li'):
-                strong = item.find('strong')
-                if not data.get('fixed_budget_amount') and not data.get('hourly_min') and not data.get('hourly_max'):
-                    desc_div = item.find('div', class_='description')
-                    # Fixed budget extraction
-                    if desc_div and desc_div.get_text(strip=True) == 'Fixed-price':
-                        budget_div = item.find('div', {'data-test': 'BudgetAmount'})
-                        if budget_div:
-                            strong_budget = budget_div.find('strong')
-                            if strong_budget:
-                                budget_text = strong_budget.get_text(strip=True)
-                                budget_match = re.search(r'\$([\d,.]+)', budget_text)
-                                if budget_match:
-                                    data['fixed_budget_amount'] = float(budget_match.group(1).replace(',', ''))
-                if not data.get('type'):
-                    desc_div = item.find('div', class_='description')
-                    if desc_div:
-                        desc_text = desc_div.get_text(strip=True)
-                        # Type
-                        if desc_text in ['Hourly', 'Fixed-price']:
-                            data['type'] = desc_text
-                if not data.get('duration'):
-                    desc_div = item.find('div', class_='description')
-                    desc_text = desc_div.get_text(strip=True) if desc_div else None
-                    if desc_text and 'Duration' in desc_text:
-                        if strong and not data.get('duration'):
-                            data['duration'] = strong.get_text(strip=True)
-                if not data.get('level'):
-                    desc_div = item.find('div', class_='description')
-                    if desc_div:
-                        desc_text = desc_div.get_text(strip=True)
-                        if 'Experience Level' in desc_text:
-                            if strong:
-                                level_text = strong.get_text(strip=True).lower()
-                                if 'entry' in level_text:
-                                    data['level'] = 'ENTRY_LEVEL'
-                                elif 'intermediate' in level_text:
-                                    data['level'] = 'INTERMEDIATE'
-                                elif 'expert' in level_text:
-                                    data['level'] = 'EXPERT'
-                                else:
-                                    data['level'] = strong.get_text(strip=True)
-                if not data.get('hourly_min') and not data.get('hourly_max'):
-                    if strong:
-                        text = strong.get_text(strip=True)
-                        if text.startswith('$'):
-                            try:
-                                hourly_vals.append(float(text.replace('$','').replace(',','')))
-                            except:
-                                pass
-        if len(hourly_vals) >= 2 and not (data.get('hourly_min') and data.get('hourly_max')):
-            data['hourly_min'], data['hourly_max'] = hourly_vals[0], hourly_vals[1]
-        elif len(hourly_vals) == 1 and not data.get('hourly_min'):
-            data['hourly_min'] = hourly_vals[0]
-
-        # After extracting all budget fields, set unused ones to 0
-        if data.get('type') == 'Hourly':
-            data['fixed_budget_amount'] = 0
-        elif data.get('type') == 'Fixed-price':
-            data['hourly_min'] = 0
-            data['hourly_max'] = 0
-
-        # Skills
-        if not data.get('skills'):
-            skills = []
-            for badge in job_details_div.find_all('div', class_='air3-line-clamp'):
-                skill = badge.get_text(strip=True)
-                if skill:
-                    skills.append(skill)
-            if skills and not data.get('skills'):
-                data['skills'] = skills
-
-        # Client info
-        if not data.get('client_country') or not data.get('buyer_location_city') or not data.get('buyer_location_localTime') or not data.get('client_company_size') or not data.get('client_industry') or not data.get('client_total_spent') or not data.get('client_hires') or not data.get('buyer_avgHourlyJobsRate_amount') or not data.get('buyer_stats_hoursCount') or not data.get('client_rating') or not data.get('client_reviews') or not data.get('buyer_jobs_postedCount') or not data.get('buyer_jobs_openCount'):
-            # Updated selector for client section
-            client_section = (
-                job_details_div.find('div', {'data-test': 'about-client-container'})
-                or job_details_div.find('div', {'data-test': 'AboutClientUser'}) or job_details_div.find('div', {'data-test': 'AboutClientVisitor'})
-            )
-            if not client_section and credentials_provided:
-                if logger.isEnabledFor(logging.DEBUG):
-                    logger.debug(f"client_section is missing for job_id {job_id}. Saving job_details_div for debugging.")
-                    os.makedirs('testing', exist_ok=True)
-                    ts = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-                    with open(f'testing/client_section_missing_{ts}.html', 'w', encoding='utf-8') as f:
-                        f.write(str(job_details_div))
-            # Extract from ul.features inside client_section if present
-            if client_section:
-                features_ul = client_section.find('ul', class_='features')
-                if features_ul:
-                    for li in features_ul.find_all('li', recursive=False):
-                        data_qa = li.get('data-qa', '')
-                        # Client location
-                        if data_qa == 'client-location':
-                            strong = li.find('strong')
-                            if strong:
-                                data['client_country'] = strong.get_text(strip=True)
-                            div = li.find('div')
-                            if div:
-                                spans = div.find_all('span', class_='nowrap')
-                                if len(spans) > 0:
-                                    data['buyer_location_city'] = spans[0].get_text(strip=True)
-                                if len(spans) > 1:
-                                    data['buyer_location_localTime'] = spans[1].get_text(strip=True)
-                        # Job posting stats
-                        elif data_qa == 'client-job-posting-stats':
-                            strong = li.find('strong')
-                            if strong:
-                                m = re.search(r'(\d+)\s+jobs posted', strong.get_text())
-                                if m:
-                                    data['buyer_jobs_postedCount'] = int(m.group(1))
-                            div = li.find('div')
-                            if div:
-                                div_text = div.get_text()
-                                m = re.search(r'(\d+)\s*%\s*hire rate', div_text, re.IGNORECASE)
-                                if m:
-                                    data['buyer_hire_rate_pct'] = int(m.group(1))
-                                m = re.search(r'(\d+)\s+open jobs?', div_text)
-                                if m:
-                                    data['buyer_jobs_openCount'] = int(m.group(1))
-                        # Spend and hires
-                        elif li.find('strong', {'data-qa': 'client-spend'}):
-                            spend_strong = li.find('strong', {'data-qa': 'client-spend'})
-                            if spend_strong:
-                                m = re.search(r'\$([\dKk,\.]+)', spend_strong.get_text())
-                                if m:
-                                    val = m.group(1).replace(',', '')
-                                    if 'K' in val or 'k' in val:
-                                        data['client_total_spent'] = float(val.replace('K','').replace('k','')) * 1000
-                                    else:
-                                        data['client_total_spent'] = float(val)
-                            hires_div = li.find('div', {'data-qa': 'client-hires'})
-                            if hires_div:
-                                hires_text = hires_div.get_text()
-                                m = re.search(r'(\d+)\s+hires', hires_text)
-                                if m:
-                                    data['client_hires'] = int(m.group(1))
-                                    data['clientActivity_totalHired'] = int(m.group(1))
-                                m = re.search(r'(\d+)\s+active', hires_text)
-                                if m:
-                                    data['buyer_stats_activeAssignmentsCount'] = int(m.group(1))
-                        # Hourly rate and hours
-                        elif li.find('strong', {'data-qa': 'client-hourly-rate'}):
-                            rate_strong = li.find('strong', {'data-qa': 'client-hourly-rate'})
-                            if rate_strong:
-                                m = re.search(r'\$([\d\.]+)', rate_strong.get_text())
-                                if m:
-                                    data['buyer_avgHourlyJobsRate_amount'] = float(m.group(1))
-                            hours_div = li.find('div', {'data-qa': 'client-hours'})
-                            if hours_div:
-                                m = re.search(r'(\d+)', hours_div.get_text().replace(',', ''))
-                                if m:
-                                    data['buyer_stats_hoursCount'] = int(m.group(1))
-                        # Company profile
-                        elif data_qa == 'client-company-profile':
-                            industry_strong = li.find('strong', {'data-qa': 'client-company-profile-industry'})
-                            if industry_strong:
-                                data['client_industry'] = industry_strong.get_text(strip=True)
-                            size_div = li.find('div', {'data-qa': 'client-company-profile-size'})
-                            if size_div:
-                                data['client_company_size'] = size_div.get_text(strip=True)
-                # Extract rating
-                if not data.get('client_rating'):
-                    rating_div = client_section.find('div', class_='air3-rating-value-text')
-                    if rating_div:
-                        data['client_rating'] = rating_div.get_text(strip=True)
-                # Extract reviews
-                if not data.get('client_reviews'):
-                    reviews_span = client_section.find('span', class_='nowrap mt-1')
-                    if reviews_span:
-                        data['client_reviews'] = reviews_span.get_text(strip=True)
-
-        # Activity on this job (clientActivity/totalHired, clientActivity/totalInvitedToInterview)
-        if not data.get('clientActivity_totalHired') or not data.get('clientActivity_totalInvitedToInterview'):
-            activity_section = job_details_div.find('section', {'data-test': 'ClientActivity'})
-            if activity_section:
-                for li in activity_section.find_all('li', class_='ca-item'):
-                    title_span = li.find('span', class_='title')
-                    value_div = li.find('div', class_='value')
-                    if title_span and value_div:
-                        title = title_span.get_text(strip=True)
-                        value = value_div.get_text(strip=True)
-                        if title.startswith('Hires'):
-                            try:
-                                data['clientActivity_totalHired'] = int(value)
-                            except:
-                                pass
-                        elif title.startswith('Interviewing'):
-                            try:
-                                data['clientActivity_totalInvitedToInterview'] = int(value)
-                            except:
-                                pass
-
-        # Invites sent
-        invites = None
-        if not data.get('clientActivity_invitationsSent'):
-            for li in job_details_div.find_all('li'):
-                if 'Invites sent:' in li.get_text():
-                    invites = li.find('div', class_='value')
-                    if invites:
-                        data['clientActivity_invitationsSent'] = invites.get_text(strip=True)
-                    else:
-                        text = li.get_text(strip=True)
-                        match = re.search(r'Invites sent:\s*(\d+)', text)
-                        if match:
-                            data['clientActivity_invitationsSent'] = match.group(1)
-                    break
-
-        # Unanswered invites
-        client_unanswered = None
-        if not data.get('clientActivity_unansweredInvites'):
-            for li in job_details_div.find_all('li'):
-                if 'Unanswered invites:' in li.get_text():
-                    client_unanswered = li.find('div', class_='value')
-                    if client_unanswered:
-                        data['clientActivity_unansweredInvites'] = client_unanswered.get_text(strip=True)
-                    else:
-                        text = li.get_text(strip=True)
-                        match = re.search(r'Unanswered invites:\s*(\d+)', text)
-                        if match:
-                            data['clientActivity_unansweredInvites'] = match.group(1)
-                    break
-
-        # Connects required
-        if not data.get('connects_required'):
-            connects_div = job_details_div.find('div', {'data-test': 'ConnectsDesktop'})
-            if connects_div:
-                connects_text = connects_div.get_text(strip=True)
-                match = re.search(r'Required Connects to submit a proposal:\s*(\d+)', connects_text)
-                if match:
-                    data['connects_required'] = int(match.group(1))
-
-        # Payment method verified
-        if not data.get('payment_verified'):
-            payment_verified = False
-            if job_details_div.find(string=re.compile('Payment method verified')):
-                payment_verified = True
-            data['payment_verified'] = payment_verified
-
-    return {job_id: data}
-
-EXTRACTABLE_FIELDS = [
-    "applicants",  # from 'totalApplicants' and HTML 'Proposals:'
-    "buyer_avgHourlyJobsRate_amount",  # avg hourly rate paid
-    "buyer_company_profile_industry",  # as 'client_industry'
-    "buyer_company_profile_size",      # as 'client_company_size'
-    "buyer_jobs_openCount",            # sometimes as part of client info
-    "buyer_jobs_postedCount",          # sometimes as part of client info
-    "buyer_location_city",             # client city
-    "buyer_location_country",          # as 'client_country'
-    "buyer_location_localTime",        # client local time
-    "buyer_location_countryTimezone",  # from JSON
-    "buyer_location_offsetFromUtcMillis",  # from JSON
-    "buyer_company_contractDate",      # as 'contractDate' from JSON
-    "buyer_stats_activeAssignmentsCount", # active assignments
-    "buyer_stats_hoursCount",          # hours count
-    "buyer_stats_totalJobsWithHires",  # from JSON
-    "buyer_hire_rate_pct",             # parsed from HTML 'hire rate'
-    "category",                        # as 'category' from <title> tag
-    "categoryGroup_name",              # as 'categoryGroup_name' (now extracted)
-    "categoryGroup_urlSlug",           # from JSON
-    "category_name",                   # from JSON
-    "category_urlSlug",                # from JSON
-    "clientActivity_invitationsSent",  # as 'invites_sent'
-    "clientActivity_lastBuyerActivity", # as 'lastBuyerActivity' (now extracted)
-    "clientActivity_totalApplicants",  # as 'applicants' (from window.__NUXT__)
-    "clientActivity_totalHired",       # total hires
-    "clientActivity_totalInvitedToInterview", # total invited to interview
-    "clientActivity_unansweredInvites",# as 'client_unanswered_invites' from JSON_HTML
-    "connectPrice",                    # as 'connects_required'
-    "contractorTier",                  # from JSON
-    "currency",                        # from JSON
-    "description",
-    "enterpriseJob",                   # from JSON
-    "fixed_budget_amount",             # fixed price budget
-    "hourly_max",                      # as 'hourly_max'
-    "hourly_min",                      # as 'hourly_min'
-    "id",                              # as 'job_id'
-    "invites_sent",                    # as 'invites_sent'
-    "isContractToHire",                # from JSON
-    "isPaymentMethodVerified",         # as 'payment_verified'
-    "level",
-    "numberOfPositionsToHire",         # from JSON
-    "phone_verified",                  # as 'phone_verified' from HTML
-    "premium",                         # from JSON
-    "qualifications",                  # as 'qualifications' from JSON
-    "questions",                       # as 'questions' from JSON
-    "skills",                          # ... as 'skills' list
-    "title",
-    "ts_create",                       # as 'createdOn' from JSON
-    "ts_publish",                      # as 'publishTime' from JSON
-    "type",                            # (can sometimes be inferred)
-]
-
-UNEXTRACTABLE_FIELDS = [
-    "applied",
-    "buyer_company_companyId",
-    "buyer_company_contractDate",
-    "fixed_duration_ctime",
-    "fixed_duration_id",
-    "fixed_duration_label",
-    "fixed_duration_mtime",
-    "fixed_duration_rid",
-    "fixed_duration_weeks",
-    "history_client_hasFinancialPrivacy",
-    "history_client_totalSpent_isoCurrencyCode",
-    "hourly_duration_ctime",
-    "hourly_duration_label",
-    "hourly_duration_mtime",
-    "hourly_duration_rid",
-    "hourly_duration_weeks",
-    "occupation_id",
-    "occupation_ontologyId",
-    "occupation_prefLabel",
-    "status",
-    "tags_0", "tags_1", "tags_2", "tags_3", "tags_4",
-    "url"
-]
 
 def playwright_cookies_to_requests(cookies):
     """
@@ -1192,6 +571,7 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
         jobs_from_last_page = limit % 50 or 50
         for page_num in range(1, pages_needed + 1):
             url = f"{base_url}&page={page_num}" if page_num > 1 else base_url
+            logger.debug(f"[requests] Fetching URL: {url}")
             try:
                 resp = session.get(url, timeout=30)
                 resp.raise_for_status()
@@ -1248,12 +628,9 @@ def fetch_job_detail(session, url, credentials_provided):
         html = resp.text
         job_id_match = re.search(r'~([0-9a-zA-Z]+)', url)
         job_id = job_id_match.group(1) if job_id_match else "0"
-        job_data = extract_job_attributes_from_html(html, job_id, credentials_provided)
-        flat = {"job_id": job_id, "url": url}
-        if job_data[job_id] is None:
-            return None
-        flat.update(job_data[job_id])
-        return flat
+        attrs = extract_job_attributes(html, job_id)
+        attrs['url'] = url
+        return attrs
     except Exception:
         logger.debug(f"[requests] Failed to process {url}")
         return None
@@ -1312,7 +689,38 @@ async def main(jsonInput: dict) -> list[dict]:
     credentials_provided = username and password
     # Extract search params
     search_params = jsonInput.get('search', {})
-
+    
+    # search_params = {
+    #   "contract_to_hire": False,
+    #   "expertise_level_number": [
+    #     "1",
+    #     "2",
+    #     "3"
+    #   ],
+    #   "fixed": True,
+    #   "fixed_max": 70,
+    #   "fixed_min": 30,
+    #   "hires_max": 0,
+    #   "hires_min": 2,
+    #   "hourly": True,
+    #   "hourly_max": 50,
+    #   "hourly_min": 10,
+    #   "limit": 100,
+    #   "log_level": "DEBUG",
+    #   "password": "4wrTYj7w3Q6sKF",
+    #   "payment_verified": False,
+    #   "previous_clients": False,
+    #   "proposal_max": 0,
+    #   "proposal_min": 0,
+    #   "query": "Workflow Automation",
+    #   "search_any": "tines zapier make.com n8n",
+    #   "sort": "relevance",
+    #   "username": "ditto@calebwelsh.com",
+    #   "category": [],
+    #   "fixed_price_catagory_num": [],
+    #   "workload": [],
+    #   "projectDuration": []
+    # }
     # If still not present, fallback to defaults
     if not search_params:
         search_params = {}
