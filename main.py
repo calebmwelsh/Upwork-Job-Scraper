@@ -690,37 +690,6 @@ async def main(jsonInput: dict) -> list[dict]:
     # Extract search params
     search_params = jsonInput.get('search', {})
     
-    # search_params = {
-    #   "contract_to_hire": False,
-    #   "expertise_level_number": [
-    #     "1",
-    #     "2",
-    #     "3"
-    #   ],
-    #   "fixed": True,
-    #   "fixed_max": 70,
-    #   "fixed_min": 30,
-    #   "hires_max": 0,
-    #   "hires_min": 2,
-    #   "hourly": True,
-    #   "hourly_max": 50,
-    #   "hourly_min": 10,
-    #   "limit": 100,
-    #   "log_level": "DEBUG",
-    #   "password": "4wrTYj7w3Q6sKF",
-    #   "payment_verified": False,
-    #   "previous_clients": False,
-    #   "proposal_max": 0,
-    #   "proposal_min": 0,
-    #   "query": "Workflow Automation",
-    #   "search_any": "tines zapier make.com n8n",
-    #   "sort": "relevance",
-    #   "username": "ditto@calebwelsh.com",
-    #   "category": [],
-    #   "fixed_price_catagory_num": [],
-    #   "workload": [],
-    #   "projectDuration": []
-    # }
     # If still not present, fallback to defaults
     if not search_params:
         search_params = {}
