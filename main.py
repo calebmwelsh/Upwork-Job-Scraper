@@ -853,10 +853,9 @@ if __name__ == "__main__":
             # proxy url
             # proxy_url = f"http://{input_data['credentials']['username']}:{input_data['credentials']['username']}@proxy.apify.com:8000"
             
+            # The returned proxy_url already includes credentials. Pass it only as server.
             proxy_details = {
-                'server': proxy_url,
-                'username': 'auto',  
-                'password': 'apify_proxy_VnnAOEUcpLkdVY5ucSzZ3sBxvN48WY3trwbs'   
+                'server': proxy_url
             }
             input_data['proxy_details'] = proxy_details
             
