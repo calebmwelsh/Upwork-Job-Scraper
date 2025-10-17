@@ -859,7 +859,6 @@ if __name__ == "__main__":
                 'password': 'apify_proxy_VnnAOEUcpLkdVY5ucSzZ3sBxvN48WY3trwbs'   
             }
             input_data['proxy_details'] = proxy_details
-            logger.debug(f"proxy_details: {proxy_details}")
             
             # set logger
             log_level = search_data.pop('log_level', None)
