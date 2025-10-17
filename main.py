@@ -552,6 +552,7 @@ async def get_requests_session_from_playwright(context, page, max_retries=3, ret
 def get_job_urls_requests(session, search_querys, search_urls, limit=50):
     """
     For each search query and URL, use requests to fetch the page and extract job URLs.
+    If less than half the limit is returned, retry the search once.
 
     :param session: requests.Session object with cookies and headers set
     :type session: requests.Session
@@ -565,10 +566,13 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
     :rtype: dict[str, list[str]]
     """
     search_results = {}
-    for query, base_url in zip(search_querys, search_urls):
+    
+    def fetch_jobs_for_query(query, base_url, limit):
+        """Helper function to fetch jobs for a single query"""
         all_hrefs = []
         pages_needed = (limit + 49) // 50
         jobs_from_last_page = limit % 50 or 50
+        
         for page_num in range(1, pages_needed + 1):
             url = f"{base_url}&page={page_num}" if page_num > 1 else base_url
             logger.debug(f"[requests] Fetching URL: {url}")
@@ -603,7 +607,31 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
             except Exception as e:
                 logger.exception(f"[requests] Skipping page {page_num} due to navigation failures: {e}")
                 continue
+        
+        return all_hrefs
+    
+    for query, base_url in zip(search_querys, search_urls):
+        # First attempt
+        logger.debug(f"[requests] First attempt for query '{query}'")
+        all_hrefs = fetch_jobs_for_query(query, base_url, limit)
+        
+        # Check if we got less than half the limit
+        half_limit = limit // 2
+        if len(all_hrefs) < half_limit:
+            logger.warning(f"[requests] First attempt returned only {len(all_hrefs)} jobs (less than half of {limit}). Retrying...")
+            # Second attempt
+            all_hrefs_retry = fetch_jobs_for_query(query, base_url, limit)
+            logger.debug(f"[requests] Second attempt returned {len(all_hrefs_retry)} jobs")
+            
+            # Use the better result
+            if len(all_hrefs_retry) > len(all_hrefs):
+                all_hrefs = all_hrefs_retry
+                logger.info(f"[requests] Retry successful! Got {len(all_hrefs)} jobs for query '{query}'")
+            else:
+                logger.warning(f"[requests] Retry didn't improve results. Keeping original {len(all_hrefs)} jobs for query '{query}'")
+        
         search_results[query] = all_hrefs
+    
     logger.debug(f"[requests] Search results: {search_results}\n")
     return search_results
 
@@ -628,11 +656,14 @@ def fetch_job_detail(session, url, credentials_provided):
         html = resp.text
         job_id_match = re.search(r'~([0-9a-zA-Z]+)', url)
         job_id = job_id_match.group(1) if job_id_match else "0"
-        attrs = extract_job_attributes(html, job_id)
+        attrs = extract_job_attributes(html)
         attrs['url'] = url
+        attrs['job_id'] = job_id
+        logger.debug(f"[requests] Job ID: {job_id}")
         return attrs
-    except Exception:
+    except Exception as e:
         logger.debug(f"[requests] Failed to process {url}")
+        logger.debug(f"[requests] Error: {e}")
         return None
 
 def browser_worker_requests(session, job_urls, credentials_provided, max_workers=20):
