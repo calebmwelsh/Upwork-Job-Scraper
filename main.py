@@ -721,7 +721,7 @@ async def main(jsonInput: dict) -> list[dict]:
     credentials_provided = username and password
     # Extract search params
     search_params = jsonInput.get('search', {})
-    
+
     # If still not present, fallback to defaults
     if not search_params:
         search_params = {}
@@ -745,8 +745,16 @@ async def main(jsonInput: dict) -> list[dict]:
 
     search_queries = [search_params.get('query', search_params.get('search_any', 'search'))]
     search_urls = [search_url]
+    
+    # proxy
+    proxy_details = jsonInput.get('proxy_details', {})
+    
+    logger.debug(f"proxy_details: {proxy_details}")
+    
+    
+    
     # Only one browser for login/captcha
-    async with AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True) as browser:
+    async with AsyncCamoufox(headless=True, geoip=True, humanize=True, i_know_what_im_doing=True, config={'forceScopeAccess': True}, disable_coop=True, proxy=proxy_details) as browser:
         logger.info("🌐 Creating browser/context/page for login...")
         try:
             context = await browser.new_context()
@@ -853,6 +861,28 @@ if __name__ == "__main__":
                 'search': search_data,
                 'general': {}
             }
+            
+            proxy_configuration = await Actor.create_proxy_configuration(
+                groups=['RESIDENTIAL'],
+                country_code='US',
+                )
+
+            if not proxy_configuration:
+                raise RuntimeError('No proxy configuration available.')
+
+            proxy_url = await proxy_configuration.new_url(session_id='a')
+            Actor.log.info(f'Proxy URL: {proxy_url}')
+            # proxy url
+            # proxy_url = f"http://{input_data['credentials']['username']}:{input_data['credentials']['username']}@proxy.apify.com:8000"
+            
+            proxy_details = {
+                'server': proxy_url,
+                'username': 'auto',  
+                'password': 'apify_proxy_VnnAOEUcpLkdVY5ucSzZ3sBxvN48WY3trwbs'   
+            }
+            input_data['proxy_details'] = proxy_details
+            logger.debug(f"proxy_details: {proxy_details}")
+            
             # set logger
             log_level = search_data.pop('log_level', None)
             if log_level:
