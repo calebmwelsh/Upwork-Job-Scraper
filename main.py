@@ -840,26 +840,26 @@ if __name__ == "__main__":
                 'general': {}
             }
             
-            # proxy_configuration = await Actor.create_proxy_configuration(
-            #     groups=['RESIDENTIAL'],
-            #     country_code='US',
-            #     )
+            proxy_configuration = await Actor.create_proxy_configuration(
+                groups=['RESIDENTIAL'],
+                country_code='US',
+                )
 
-            # if not proxy_configuration:
-            #     raise RuntimeError('No proxy configuration available.')
+            if not proxy_configuration:
+                raise RuntimeError('No proxy configuration available.')
 
-            # proxy_url = await proxy_configuration.new_url(session_id='a')
-            # Actor.log.info(f'Proxy URL: {proxy_url}')
-            # # proxy url
-            # # proxy_url = f"http://{input_data['credentials']['username']}:{input_data['credentials']['username']}@proxy.apify.com:8000"
+            proxy_url = await proxy_configuration.new_url(session_id='a')
+            Actor.log.info(f'Proxy URL: {proxy_url}')
+            # proxy url
+            # proxy_url = f"http://{input_data['credentials']['username']}:{input_data['credentials']['username']}@proxy.apify.com:8000"
             
-            # proxy_details = {
-            #     'server': proxy_url,
-            #     'username': 'auto',  
-            #     'password': 'apify_proxy_VnnAOEUcpLkdVY5ucSzZ3sBxvN48WY3trwbs'   
-            # }
-            # input_data['proxy_details'] = proxy_details
-            # logger.debug(f"proxy_details: {proxy_details}")
+            proxy_details = {
+                'server': proxy_url,
+                'username': 'auto',  
+                'password': 'apify_proxy_VnnAOEUcpLkdVY5ucSzZ3sBxvN48WY3trwbs'   
+            }
+            input_data['proxy_details'] = proxy_details
+            logger.debug(f"proxy_details: {proxy_details}")
             
             # set logger
             log_level = search_data.pop('log_level', None)
