@@ -430,7 +430,7 @@ async def login_and_solve(
     search_url: str,
     login_url: str,
     credentials_provided: bool
-) -> None:
+) -> tuple[Page, BrowserContext]:
     """
     Navigate to Upwork, solve captcha if present, and log in if credentials are provided.
     If a new context or cookies are cleared, re-solve captcha before login.
@@ -553,7 +553,6 @@ async def get_requests_session_from_playwright(context, page, max_retries=3, ret
 def get_job_urls_requests(session, search_querys, search_urls, limit=50):
     """
     For each search query and URL, use requests to fetch the page and extract job URLs.
-    If less than half the limit is returned, retry the search once.
 
     :param session: requests.Session object with cookies and headers set
     :type session: requests.Session
@@ -578,6 +577,13 @@ def get_job_urls_requests(session, search_querys, search_urls, limit=50):
                 resp = session.get(url, timeout=30)
                 resp.raise_for_status()
                 html = resp.text
+                
+                # Check for "log in" string in the first iteration of the first query to detect login issues
+                if page_num == 1 and query == search_querys[0]:
+                    if "log in" in html.lower():
+                        logger.warning("⚠️ 'log in' string detected in HTML response. This indicates the session may not be properly authenticated.")
+                        logger.warning(f"HTML snippet containing 'log in': {html[html.lower().find('log in'):html.lower().find('log in')+200]}")
+                
                 soup = BeautifulSoup(html, 'html.parser')
                 articles = soup.find_all('article')
                 page_hrefs = []
@@ -720,10 +726,9 @@ async def main(jsonInput: dict) -> list[dict]:
     search_urls = [search_url]
     
     # proxy
-    proxy_details = jsonInput.get('proxy_details', {})
+    proxy_details = jsonInput.get('proxy_details', None)
     
     logger.debug(f"proxy_details: {proxy_details}")
-    
     
     
     # Only one browser for login/captcha
@@ -835,26 +840,26 @@ if __name__ == "__main__":
                 'general': {}
             }
             
-            proxy_configuration = await Actor.create_proxy_configuration(
-                groups=['RESIDENTIAL'],
-                country_code='US',
-                )
+            # proxy_configuration = await Actor.create_proxy_configuration(
+            #     groups=['RESIDENTIAL'],
+            #     country_code='US',
+            #     )
 
-            if not proxy_configuration:
-                raise RuntimeError('No proxy configuration available.')
+            # if not proxy_configuration:
+            #     raise RuntimeError('No proxy configuration available.')
 
-            proxy_url = await proxy_configuration.new_url(session_id='a')
-            Actor.log.info(f'Proxy URL: {proxy_url}')
-            # proxy url
-            # proxy_url = f"http://{input_data['credentials']['username']}:{input_data['credentials']['username']}@proxy.apify.com:8000"
+            # proxy_url = await proxy_configuration.new_url(session_id='a')
+            # Actor.log.info(f'Proxy URL: {proxy_url}')
+            # # proxy url
+            # # proxy_url = f"http://{input_data['credentials']['username']}:{input_data['credentials']['username']}@proxy.apify.com:8000"
             
-            proxy_details = {
-                'server': proxy_url,
-                'username': 'auto',  
-                'password': 'apify_proxy_VnnAOEUcpLkdVY5ucSzZ3sBxvN48WY3trwbs'   
-            }
-            input_data['proxy_details'] = proxy_details
-            logger.debug(f"proxy_details: {proxy_details}")
+            # proxy_details = {
+            #     'server': proxy_url,
+            #     'username': 'auto',  
+            #     'password': 'apify_proxy_VnnAOEUcpLkdVY5ucSzZ3sBxvN48WY3trwbs'   
+            # }
+            # input_data['proxy_details'] = proxy_details
+            # logger.debug(f"proxy_details: {proxy_details}")
             
             # set logger
             log_level = search_data.pop('log_level', None)
