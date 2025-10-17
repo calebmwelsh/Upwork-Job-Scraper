@@ -80,13 +80,12 @@ class JobAttrExtractor:
             'url'
         ]
     
-    def extract_from_html(self, html_content: str, job_id: str = None) -> Dict[str, Any]:
+    def extract_from_html(self, html_content: str) -> Dict[str, Any]:
         """
         Extract job data from HTML content string
         
         Args:
             html_content: HTML content as string
-            job_id: Optional job ID to include in results
             
         Returns:
             Dictionary containing extracted job data
@@ -94,9 +93,6 @@ class JobAttrExtractor:
         try:
             soup = BeautifulSoup(html_content, 'html.parser')
             extracted_data = {}
-            
-            if job_id:
-                extracted_data['job_id'] = job_id
             
             # Method 1: Extract from JSON in script tags
             json_data = self._extract_json_from_scripts(soup)
@@ -144,6 +140,12 @@ class JobAttrExtractor:
             
             # Method 7.6: Clean up any remaining random values for protected fields
             self._cleanup_protected_fields(extracted_data)
+            
+            # Method 7.7: Clean up client_total_spent to ensure it's a valid monetary value
+            self._cleanup_client_total_spent(extracted_data)
+            
+            # Method 7.8: Clean up fixed_budget_amount to ensure it only contains valid values
+            self._cleanup_fixed_budget_amount(extracted_data)
             
             # Method 8: Calculate hire rate percentage from resolved data
             if 'buyer_stats_totalJobsWithHires' in extracted_data and 'buyer_jobs_postedCount' in extracted_data:
@@ -198,7 +200,12 @@ class JobAttrExtractor:
             # Ensure all target fields are present with default values if missing
             for field in self.target_fields:
                 if field not in extracted_data:
-                    extracted_data[field] = ""
+                    if field in ['buyer_avgHourlyJobsRate_amount', 'client_hires', 'client_total_spent', 'hourly_min', 'hourly_max', 'fixed_budget_amount', "connects_required"]:
+                        extracted_data[field] = "0"
+                    elif field == 'payment_verified':
+                        extracted_data[field] = False
+                    else:
+                        extracted_data[field] = ""
             
             return extracted_data
             
@@ -558,6 +565,7 @@ class JobAttrExtractor:
                                             extracted['buyer_location_city'] = city_text
                 elif data_qa == 'client-spend':
                     # Extract total spent: "$19K total spent"
+                    # Look for the specific pattern with $ and K in the text content
                     spend_match = re.search(r'\$([\d.]+K?)', text_content)
                     if spend_match:
                         extracted['client_total_spent'] = self._normalize_client_total_spent(spend_match.group(1))
@@ -584,14 +592,26 @@ class JobAttrExtractor:
                         extracted['client_company_size'] = size_text
         
         # Look for payment verification status
+        # Check for payment verification icon and text
         payment_verified_elements = soup.find_all(class_='payment-verified')
         if payment_verified_elements:
             extracted['payment_verified'] = True
+        else:
+            # Alternative check: look for "Payment method verified" text
+            payment_text_elements = soup.find_all(text=lambda text: text and 'Payment method verified' in text)
+            if payment_text_elements:
+                extracted['payment_verified'] = True
         
-        # Look for phone verification (if present)
+        # Look for phone verification status
+        # Check for phone verification icon and text
         phone_verified_elements = soup.find_all(class_='phone-verified')
         if phone_verified_elements:
             extracted['phone_verified'] = True
+        else:
+            # Alternative check: look for "Phone number verified" text
+            phone_text_elements = soup.find_all(text=lambda text: text and 'Phone number verified' in text)
+            if phone_text_elements:
+                extracted['phone_verified'] = True
         
         # Look for hourly rate ranges in specific HTML structure
         # Pattern: $10.00 - $25.00
@@ -720,20 +740,7 @@ class JobAttrExtractor:
             if matches:
                 extracted['url'] = matches[0]
                 break
-        
-        # Look for job ID in URL or data attributes
-        job_id_patterns = [
-            r'/jobs/(\d+)',
-            r'/freelance-jobs/(\d+)',
-            r'data-job-id="(\d+)"',
-            r'data-test="job-id"[^>]*>(\d+)<'
-        ]
-        
-        for pattern in job_id_patterns:
-            matches = re.findall(pattern, html_content, re.IGNORECASE)
-            if matches:
-                extracted['job_id'] = matches[0]
-                break
+    
         
         # Look for skills in various formats
         skills_patterns = [
@@ -966,8 +973,27 @@ class JobAttrExtractor:
                             extracted[target_field] == ""
                         )
                         
+                        # Don't overwrite client_total_spent if it's already been correctly extracted and normalized
+                        if target_field == 'client_total_spent' and target_field in extracted:
+                            # Always prioritize HTML-extracted values over Nuxt data
+                            # Only overwrite if the current value is clearly invalid
+                            if self._is_valid_monetary_value(extracted[target_field]):
+                                should_set_value = False
+                            else:
+                                # Current value is not valid, allow overwriting
+                                pass
+                        
+                        # Don't overwrite fixed_budget_amount with random Nuxt values
+                        if target_field == 'fixed_budget_amount' and target_field in extracted:
+                            # Only allow overwriting if current value is clearly invalid
+                            if self._is_valid_monetary_value(extracted[target_field]) and extracted[target_field] != "0":
+                                should_set_value = False
+                            else:
+                                # Current value is invalid or 0, allow overwriting
+                                pass
+                        
                         # For specific numeric fields, also check if current value is not a valid number
-                        if target_field in ['buyer_stats_hoursCount', 'buyer_stats_totalJobsWithHires', 'client_hires', 'client_reviews', 'client_rating', 'buyer_hire_rate_pct']:
+                        if target_field in ['buyer_stats_hoursCount', 'buyer_stats_totalJobsWithHires', 'client_hires', 'client_reviews', 'client_rating', 'buyer_hire_rate_pct', 'buyer_avgHourlyJobsRate_amount', 'hourly_min', 'hourly_max', 'fixed_budget_amount']:
                             if target_field in extracted and extracted[target_field] != "Not found" and extracted[target_field] is not None and extracted[target_field] != "":
                                 try:
                                     # If current value is a valid number, don't overwrite it
@@ -984,9 +1010,15 @@ class JobAttrExtractor:
                                 if value.lower() in ['true', 'false']:
                                     extracted[target_field] = value.lower() == 'true'
                                 else:
-                                    # Normalize client_total_spent if needed
-                                    if target_field == 'client_total_spent':
-                                        extracted[target_field] = self._normalize_client_total_spent(value)
+                                    # Normalize monetary fields if needed
+                                    if target_field in ['client_total_spent', 'hourly_min', 'hourly_max', 'fixed_budget_amount']:
+                                        # Additional validation for monetary fields
+                                        if self._is_valid_monetary_value(value):
+                                            if target_field == 'client_total_spent':
+                                                extracted[target_field] = self._normalize_client_total_spent(value)
+                                            else:
+                                                # For hourly rates and fixed budget, just normalize the number
+                                                extracted[target_field] = self._normalize_monetary_value(value)
                                     else:
                                         extracted[target_field] = value
                         else:
@@ -1124,7 +1156,81 @@ class JobAttrExtractor:
         if value.startswith('li.') or value.startswith('.ma-scope') or value.startswith('@media'):
             return False
         
+        # Filter out values that look like IP addresses
+        if '.' in value and len(value.split('.')) == 4:
+            try:
+                # Check if it's a valid IP address format
+                parts = value.split('.')
+                if all(part.isdigit() and 0 <= int(part) <= 255 for part in parts):
+                    return False
+            except ValueError:
+                pass
+        
+        # Filter out values that contain non-numeric characters for numeric fields
+        # This will be handled by the specific field validation
+        
         return True
+
+    def _is_valid_monetary_value(self, value: str) -> bool:
+        """Check if value is a valid monetary amount"""
+        if not value:
+            return False
+        
+        # Remove common currency symbols and whitespace
+        cleaned = str(value).strip().replace('$', '').replace(',', '')
+        
+        # Check if it's a valid number (with optional K suffix)
+        if re.match(r'^[\d]+(?:\.\d+)?[Kk]?$', cleaned):
+            # Additional validation for reasonable monetary values
+            try:
+                if cleaned.endswith(('K', 'k')):
+                    # Handle K suffix (multiply by 1000)
+                    num_part = float(cleaned[:-1])
+                    total_value = num_part * 1000
+                else:
+                    total_value = float(cleaned)
+                
+                # Reject unreasonably large values (more than $1 billion)
+                if total_value > 1000000000:
+                    return False
+                    
+                return True
+            except (ValueError, TypeError):
+                return False
+        
+        # Check if it's a pure number
+        try:
+            num_value = float(cleaned)
+            # Reject unreasonably large values (more than $1 billion)
+            if num_value > 1000000000:
+                return False
+            return True
+        except (ValueError, TypeError):
+            return False
+
+    def _normalize_monetary_value(self, value: str) -> str:
+        """Normalize monetary values like hourly rates and fixed budget amounts.
+        
+        Similar to _normalize_client_total_spent but for smaller amounts.
+        """
+        try:
+            if value is None:
+                return value
+            text = str(value).strip()
+            # Remove currency symbol and commas
+            text = text.replace('$', '').replace(',', '').strip()
+            m = re.match(r'^([\d]+(?:\.\d+)?)([Kk])?$', text)
+            if not m:
+                return value
+            number_part = float(m.group(1))
+            has_k = m.group(2) is not None
+            normalized = number_part * 1000 if has_k else number_part
+            # Output as integer string if it is effectively an integer
+            if abs(normalized - int(normalized)) < 1e-9:
+                return str(int(normalized))
+            return str(normalized)
+        except Exception:
+            return value
 
     def _extract_targeted_block(self, html_content: str, extracted: Dict[str, Any]):
         """Extract values from targeted Nuxt mapping block - runs AFTER all Nuxt resolution"""
@@ -1178,6 +1284,66 @@ class JobAttrExtractor:
                 value = extracted[field]
                 if not validator(value):
                     extracted[field] = "0"  # Set to 0 instead of random values
+
+    def _cleanup_client_total_spent(self, extracted: Dict[str, Any]):
+        """Clean up client_total_spent to ensure it's a valid monetary value"""
+        if 'client_total_spent' in extracted:
+            value = extracted['client_total_spent']
+            if not self._is_valid_monetary_value(value):
+                # If the value is not valid, try to find the first valid monetary value
+                # by looking for patterns like "167K", "19000", etc.
+                if isinstance(value, str):
+                    # Look for monetary patterns in the string
+                    monetary_patterns = [
+                        r'(\d+(?:\.\d+)?[Kk]?)',  # Numbers with optional K
+                        r'(\d+(?:,\d{3})*(?:\.\d{2})?)',  # Numbers with commas
+                    ]
+                    
+                    for pattern in monetary_patterns:
+                        matches = re.findall(pattern, value)
+                        for match in matches:
+                            if self._is_valid_monetary_value(match):
+                                extracted['client_total_spent'] = self._normalize_client_total_spent(match)
+                                return
+                
+                # If no valid monetary value found, set to 0
+                extracted['client_total_spent'] = "0"
+
+    def _cleanup_fixed_budget_amount(self, extracted: Dict[str, Any]):
+        """Clean up fixed_budget_amount to ensure it only contains valid values"""
+        if 'fixed_budget_amount' in extracted:
+            value = extracted['fixed_budget_amount']
+            
+            # If this is an hourly job, fixed_budget_amount should always be 0
+            if 'type' in extracted and extracted['type'] == 'Hourly':
+                extracted['fixed_budget_amount'] = "0"
+                return
+            
+            # If we have hourly rates, this is clearly an hourly job
+            if (('hourly_min' in extracted and extracted['hourly_min'] != '0' and extracted['hourly_min'] != '') or 
+                ('hourly_max' in extracted and extracted['hourly_max'] != '0' and extracted['hourly_max'] != '')):
+                extracted['fixed_budget_amount'] = "0"
+                return
+            
+            # Check if the current value is valid
+            if not self._is_valid_monetary_value(value):
+                # If the value is not valid, try to find the first valid monetary value
+                if isinstance(value, str):
+                    # Look for monetary patterns in the string
+                    monetary_patterns = [
+                        r'(\d+(?:\.\d+)?[Kk]?)',  # Numbers with optional K
+                        r'(\d+(?:,\d{3})*(?:\.\d{2})?)',  # Numbers with commas
+                    ]
+                    
+                    for pattern in monetary_patterns:
+                        matches = re.findall(pattern, value)
+                        for match in matches:
+                            if self._is_valid_monetary_value(match):
+                                extracted['fixed_budget_amount'] = self._normalize_monetary_value(match)
+                                return
+                
+                # If no valid monetary value found, set to 0
+                extracted['fixed_budget_amount'] = "0"
 
     def _is_valid_hours_count(self, value: str) -> bool:
         """Check if value is a valid hours count (numeric, reasonable range)"""
@@ -1248,16 +1414,15 @@ class JobAttrExtractor:
 
 
 # Convenience function for easy import and use
-def extract_job_attributes(html_content: str, job_id: str = None) -> Dict[str, Any]:
+def extract_job_attributes(html_content: str) -> Dict[str, Any]:
     """
     Extract job attributes from HTML content string
     
     Args:
         html_content: HTML content as string
-        job_id: Optional job ID to include in results
         
     Returns:
         Dictionary containing extracted job attributes
     """
     extractor = JobAttrExtractor()
-    return extractor.extract_from_html(html_content, job_id)
+    return extractor.extract_from_html(html_content)
