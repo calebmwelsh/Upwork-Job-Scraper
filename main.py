@@ -405,7 +405,8 @@ async def login_process(
             await page.press('#login_password', 'Enter')
             await asyncio.sleep(3)
             body_text = await page.locator('body').inner_text()
-            if 'Verification failed. Please try again.' in body_text[:100] or 'Please fix the errors below' in body_text[:100]:
+            # error_texts = ['Verification failed. Please try again.', 'Please fix the errors below', 'Due to technical difficulties we are unable to process your request.']
+            if 'Verification failed. Please try again.' in body_text[:100] or 'Please fix the errors below' in body_text[:100] or "Due to technical difficulties we are unable to process your request." in body_text[:100]:
                 logger.debug(f"Verification on login failed. Attempt {attempt}/{max_attempts}")
                 # Try reloading or creating a new page, but do NOT clear cookies yet
                 if attempt == max_attempts // 2:
