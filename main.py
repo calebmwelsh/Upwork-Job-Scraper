@@ -865,6 +865,8 @@ if __name__ == "__main__":
             if log_level:
                 logger_obj = Logger(level=log_level)
                 logger = logger_obj.get_logger()
+                
+            logger.debug(f"APIFY_PROXY_PASSWORD: {os.environ['APIFY_PROXY_PASSWORD']}")
             
             # Run your existing scraper logic
             logger.debug(f"input_data: {input_data}")
