@@ -850,13 +850,14 @@ if __name__ == "__main__":
 
             proxy_url = await proxy_configuration.new_url(session_id='a')
             Actor.log.info(f'Proxy URL: {proxy_url}')
-            # proxy url
-            # proxy_url = f"http://{input_data['credentials']['username']}:{input_data['credentials']['username']}@proxy.apify.com:8000"
-            
-            # The returned proxy_url already includes credentials. Pass it only as server.
-            proxy_details = {
-                'server': proxy_url
-            }
+            # Parse Apify proxy URL into server/username/password for Playwright/Camoufox
+            from urllib.parse import urlparse
+            _p = urlparse(proxy_url)
+            _server = f"{_p.scheme}://{_p.hostname}:{_p.port}"
+            proxy_details = {'server': _server}
+            if _p.username and _p.password:
+                proxy_details['username'] = _p.username
+                proxy_details['password'] = _p.password
             input_data['proxy_details'] = proxy_details
             
             # set logger
@@ -864,6 +865,7 @@ if __name__ == "__main__":
             if log_level:
                 logger_obj = Logger(level=log_level)
                 logger = logger_obj.get_logger()
+            
             # Run your existing scraper logic
             logger.debug(f"input_data: {input_data}")
             result = await main(input_data)
