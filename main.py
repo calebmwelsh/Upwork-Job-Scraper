@@ -13,6 +13,7 @@ import re
 import sys
 import time
 from collections import deque
+from urllib.parse import urlparse, urlunparse
 
 import js2py
 import pandas as pd
@@ -509,7 +510,42 @@ def playwright_cookies_to_requests(cookies):
         jar.set(cookie['name'], cookie['value'], domain=cookie['domain'], path=cookie['path'])
     return jar
 
-async def get_requests_session_from_playwright(context, page, max_retries=3, retry_delay=1):
+def _build_proxy_url_from_details(proxy_details: dict | None) -> str | None:
+    """
+    Build a proxy URL suitable for requests from a `proxy_details` dict.
+
+    Expected keys:
+    - server: base proxy URL (may already include scheme and credentials)
+    - username: optional username
+    - password: optional password
+
+    Returns a URL string like: http://user:pass@host:port or None if unavailable.
+    """
+    if not proxy_details:
+        return None
+    server = proxy_details.get('server')
+    if not server:
+        return None
+    # Ensure scheme present for parsing
+    if not server.startswith(('http://', 'https://')):
+        server = f"http://{server}"
+    parsed = urlparse(server)
+    # If credentials already embedded, keep as-is
+    if parsed.username or '@' in server:
+        return urlunparse(parsed)
+    username = proxy_details.get('username')
+    password = proxy_details.get('password')
+    if not (username and password):
+        return urlunparse(parsed)
+    # Inject credentials
+    netloc = parsed.netloc
+    # If netloc contains host:port, prepend credentials
+    netloc_with_auth = f"{username}:{password}@{netloc}"
+    parsed_with_auth = parsed._replace(netloc=netloc_with_auth)
+    return urlunparse(parsed_with_auth)
+
+
+async def get_requests_session_from_playwright(context, page, max_retries=3, retry_delay=1, proxy_details: dict | None = None):
     """
     Extract cookies and user-agent from Playwright context and page, and build a requests.Session.
     Retries user-agent extraction if the execution context is destroyed.
@@ -547,6 +583,13 @@ async def get_requests_session_from_playwright(context, page, max_retries=3, ret
     session = requests.Session()
     session.cookies = playwright_cookies_to_requests(cookies)
     session.headers.update({'User-Agent': user_agent})
+    # Apply proxy to requests session if provided
+    proxy_url = _build_proxy_url_from_details(proxy_details)
+    if proxy_url:
+        session.proxies.update({
+            'http': proxy_url,
+            'https': proxy_url,
+        })
     return session
 
 
@@ -700,7 +743,7 @@ async def main(jsonInput: dict) -> list[dict]:
     credentials_provided = username and password
     # Extract search params
     search_params = jsonInput.get('search', {})
-
+    
     # If still not present, fallback to defaults
     if not search_params:
         search_params = {}
@@ -747,7 +790,7 @@ async def main(jsonInput: dict) -> list[dict]:
             logger.error(f"⚠️ Error logging in: {e}")
             sys.exit(1)
         # Extract cookies and user-agent, build requests session
-        session = await get_requests_session_from_playwright(context, page)
+        session = await get_requests_session_from_playwright(context, page, proxy_details=proxy_details)
     # Use requests for all scraping
     try:
         logger.info("💼 Getting Related Jobs...")
@@ -865,9 +908,6 @@ if __name__ == "__main__":
             if log_level:
                 logger_obj = Logger(level=log_level)
                 logger = logger_obj.get_logger()
-                
-            logger.debug(f"APIFY_PROXY_PASSWORD: {os.environ['APIFY_PROXY_PASSWORD']}")
-            
             # Run your existing scraper logic
             logger.debug(f"input_data: {input_data}")
             result = await main(input_data)
