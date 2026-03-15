@@ -1,8 +1,11 @@
-from typing import Union, List, Optional
+from typing import List, Optional, Union
 
-from playwright.async_api import ElementHandle, Page, Frame
+from playwright.async_api import ElementHandle, Frame, Page
 
-from utils.logger import Logger
+try:
+    from logger import Logger
+except ImportError:
+    from execution.logger import Logger
 logger = Logger().get_logger()
 
 

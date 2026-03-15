@@ -1,13 +1,17 @@
-from typing import Literal, Union
 import asyncio
+from typing import Literal, Union
 
 from playwright.async_api import ElementHandle, Frame, Page
 
-from utils.logger import Logger
+try:
+    from logger import Logger
+except ImportError:
+    from execution.logger import Logger
 logger = Logger().get_logger()
 
 
 from playwright._impl._errors import Error as PlaywrightError
+
 
 async def safe_query(page, selector, retries=3, delay=2):
     for attempt in range(retries):

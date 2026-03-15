@@ -6,14 +6,16 @@ It handles various data sources including JSON embedded in script tags, HTML att
 """
 
 import json
-import logging
 import re
 from typing import Any, Dict, Optional
 
 from bs4 import BeautifulSoup
 
 # Configure logging
-from .logger import Logger
+try:
+    from .logger import Logger
+except ImportError:
+    from logger import Logger
 
 logger_obj = Logger(level="DEBUG")
 logger = logger_obj.get_logger()

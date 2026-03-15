@@ -1,22 +1,53 @@
+
+# Python
 __pycache__/
-*tempCodeRunnerFile.py
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+venv/
+ENV/
+env/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sensitive and Environment files
+.env/
+.env
+.env.local
+
+# Output data
+/execution/data/outputs/
+*.html
+*.png
+
+# Temporary Files
+.tmp/
+*.log
+
+# OS
 .DS_Store
-
-# Config files
-config.toml
-
-# Testing files
-testing/
-test*
-multi_context.py
-multi_browser.py
-extract_request.py
-merge_test.py
-request_auth_test.py
-
-# Data output and logs (avoid committing large files)
-data/
-Notes.txt
-
-.gitattributes
-.dockerignore
+Thumbs.db
+notes.txt

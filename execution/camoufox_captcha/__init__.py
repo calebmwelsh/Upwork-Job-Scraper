@@ -2,9 +2,9 @@
 Camoufox Captcha - Automatically solve captcha using Camoufox
 """
 import logging
-from typing import Union, Literal, Optional
+from typing import Literal, Optional, Union
 
-from playwright.async_api import Page, Frame, ElementHandle
+from playwright.async_api import BrowserContext, ElementHandle, Frame, Page
 
 from .cloudflare import solve_cloudflare_by_click
 
@@ -13,6 +13,7 @@ logging.getLogger("camoufox_captcha").addHandler(logging.NullHandler())
 
 async def solve_captcha(
         queryable: Union[Page, Frame, ElementHandle],
+        browser_context: Optional[BrowserContext] = None,
         captcha_type: Literal["cloudflare"] = "cloudflare",
         challenge_type: Literal["interstitial", "turnstile"] = "interstitial",
         method: Optional[str] = None,
@@ -71,6 +72,7 @@ async def solve_captcha(
         if method in (None, 'click'):
             return await solve_cloudflare_by_click(
                 queryable,
+                browser_context=browser_context,
                 challenge_type=challenge_type,
                 **kwargs
             )

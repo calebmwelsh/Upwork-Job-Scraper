@@ -1,0 +1,68 @@
+{
+    "query": "",
+    "search_any": "tines zapier make.com n8n agentic python airtable",
+    "search_exact": "",
+    "search_none": "",
+    "search_title": "",
+    "category": [],
+    "projectDuration": [
+        "week",
+        "month",
+        "semester",
+        "ongoing"
+    ],
+    "fixed": true,
+    "hires_min": 1,
+    "hires_max": 10,
+    "hourly": true,
+    "hourly_max": 50,
+    "hourly_min": 10,
+    "limit": 100,
+    "payment_verified": true,
+    "contract_to_hire": false,
+    "previous_clients": false,
+    "fixed_price_catagory_num": [],
+    "fixed_max": 70,
+    "fixed_min": 0,
+    "proposal_min": 0,
+    "proposal_max": 0,
+    "sort": "newest",
+    "expertise_level_number": [
+        "1"
+    ],
+    "workload": [],
+    "days_posted": 7,
+    "save_csv": true,
+    "filtering": {
+        "use_ai_filter": false,
+        "qualify_keywords": [
+            "zapier",
+            "make.com",
+            "make",
+            "n8n",
+            "tines",
+            "airtable",
+            "automation",
+            "workflow",
+            "integration",
+            "api",
+            "webhook",
+            "rest api",
+            "data sync",
+            "python",
+            "agentic",
+            "agent"
+        ],
+        "disqualify_keywords": [
+            "tutor",
+            "teach",
+            "survey",
+            "questionnaire",
+            "academic",
+            "research",
+            "social media manager",
+            "copywriter",
+            "marketing assistant"
+        ]
+    }
+}

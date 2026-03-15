@@ -1,8 +1,13 @@
-apify==3.0.1
-beautifulsoup4==4.13.4
-camoufox==0.4.11
-coloredlogs==15.0.1
-Js2Py==0.74
-pandas==2.3.0
-playwright==1.52.0
-toml==0.10.2
+# Upwork Job Scraper Dependencies
+
+# Core utilities
+python-dotenv>=1.0.0
+
+# Scraping & Automation
+requests>=2.31.0
+camoufox[geoip]>=0.4.11
+playwright>=1.41.0
+pandas>=2.2.0
+beautifulsoup4>=4.12.0
+undetected-chromedriver>=3.5.0
+

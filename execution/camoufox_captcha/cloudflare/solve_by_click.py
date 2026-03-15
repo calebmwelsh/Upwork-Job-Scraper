@@ -1,17 +1,25 @@
 import asyncio
 import logging
-from typing import Optional, Union, Literal
+from typing import Literal, Optional, Union
 
-from playwright.async_api import Page, BrowserContext, ElementHandle, Frame, TimeoutError as PlaywrightTimeoutError 
-from playwright._impl._errors import TargetClosedError, Error as CrashedError
+from playwright._impl._errors import Error as CrashedError
+from playwright._impl._errors import TargetClosedError
+from playwright.async_api import BrowserContext, ElementHandle, Frame, Page
+from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 
-from utils.logger import Logger
+try:
+    from logger import Logger
+except ImportError:
+    from execution.logger import Logger
 logger = Logger().get_logger()
 
 from camoufox_captcha.cloudflare.utils.detection import detect_cloudflare_challenge
 from camoufox_captcha.cloudflare.utils.dom_helpers import get_ready_checkbox
 from camoufox_captcha.common.detection import detect_expected_content
-from camoufox_captcha.common.shadow_root import search_shadow_root_iframes, search_shadow_root_elements
+from camoufox_captcha.common.shadow_root import (
+    search_shadow_root_elements,
+    search_shadow_root_iframes,
+)
 
 
 async def solve_cloudflare_by_click(

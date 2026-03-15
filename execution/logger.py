@@ -14,8 +14,8 @@ class Logger:
 
     def __init__(self, name="Upwork", level="DEBUG"):
         # Ensure all log directories exist
-        for log_dir in self.LOG_DIRS.values():
-            os.makedirs(log_dir, exist_ok=True)
+        # for log_dir in self.LOG_DIRS.values():
+        #     os.makedirs(log_dir, exist_ok=True)
         self.logger = logging.getLogger(name)
         self.set_level(level)
         self._setup_coloredlogs()
@@ -47,9 +47,3 @@ class Logger:
     def get_logger(self):
         return self.logger
 
-    @classmethod
-    def get_log_dir(cls, level):
-        """
-        Get the default directory for a given log level (case-insensitive).
-        """
-        return cls.LOG_DIRS.get(level.upper(), os.path.join('data', 'logging', 'states', 'other'))

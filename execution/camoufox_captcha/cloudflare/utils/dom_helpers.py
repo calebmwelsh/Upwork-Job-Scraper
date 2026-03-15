@@ -1,11 +1,13 @@
 import asyncio
-from typing import Optional, List, Tuple
-
-from playwright.async_api import Frame, ElementHandle
+from typing import List, Optional, Tuple
 
 from camoufox_captcha.common.shadow_root import search_shadow_root_elements
+from playwright.async_api import ElementHandle, Frame
 
-from utils.logger import Logger
+try:
+    from logger import Logger
+except ImportError:
+    from execution.logger import Logger
 logger = Logger().get_logger()
 
 
