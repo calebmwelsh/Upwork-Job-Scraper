@@ -1,4 +1,4 @@
-# Upwork Job Scraper (Standalone)
+# Upwork Job Scraper
 
 A specialized tool for scraping Upwork job listings based on advanced search criteria and saving results directly to CSV.
 
