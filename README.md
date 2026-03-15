@@ -67,4 +67,3 @@ This project follows a 3-layer architecture for reliability:
 
 ## Documentation
 - **Detailed Scraper Guide**: See [directives/scrape_upwork.md](directives/scrape_upwork.md)
-- **Refactoring Walkthrough**: See [walkthrough.md](file:///C:/Users/KDID/.gemini/antigravity/brain/e7cf4b05-cd4f-466f-a2a8-2bc760ebbda1/walkthrough.md)
